@@ -8,7 +8,7 @@ def fibonacci(n):
     else:
         return fibonacci(n-1) + fibonacci(n-2)
 
-def sum(a, b):
+def f_sum(a, b):
     n = a
     for i in range(a + 1, b + 1):
         n += i

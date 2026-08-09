@@ -52,4 +52,8 @@ def gcd_euclid(a, b):
 # 연습문제
 # 1. 피보나치수 구하기
 def fibonacci(n):
-    
+    if n == 1:
+        return 0
+    elif n == 2:
+        return 1
+    return fibonacci(n-1) + fibonacci(n-2)

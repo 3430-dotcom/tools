@@ -51,10 +51,25 @@ export class CrossSectionController {
     this.group.add(this.stencilRoot, this.capGroup)
   }
 
+  /**
+   * Sets the model's bounding radius, which the offset slider (-1..1) is
+   * scaled against and which the guide-plane helpers are sized from. Must be
+   * called for every loaded model (PDB included) -- without it the radius
+   * stays at its tiny constructor default and the slider only sweeps a
+   * sliver near the very center of the model.
+   */
+  setRadius(radius: number) {
+    this.radius = Math.max(radius, 0.001)
+    const helperSize = this.radius * 3
+    for (const axis of AXES) {
+      this.planeHelpers[axis].size = helperSize
+    }
+  }
+
   /** (Re)builds the stencil groups + cap planes for a given geometry (STL solids only). */
   attachGeometry(geometry: THREE.BufferGeometry, boundingRadius: number) {
     this.clearStencil()
-    this.radius = Math.max(boundingRadius, 0.001)
+    this.setRadius(boundingRadius)
     const planeSize = this.radius * 4
 
     for (const axis of AXES) {

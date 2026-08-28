@@ -66,6 +66,8 @@ export function useThreeViewer() {
       const radius = box.getBoundingSphere(new THREE.Sphere()).radius
       if (capGeometry) {
         cs.attachGeometry(capGeometry, radius)
+      } else {
+        cs.setRadius(radius)
       }
 
       const resetAxis = defaultAxisState()

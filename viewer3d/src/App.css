@@ -1,0 +1,397 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  border-bottom: 1px solid #1f2330;
+  background: linear-gradient(180deg, #12151d, #0d0f16);
+  z-index: 5;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-mark {
+  font-size: 26px;
+  color: #7dd3fc;
+  text-shadow: 0 0 16px rgba(125, 211, 252, 0.6);
+}
+
+.brand h1 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.2px;
+  color: #f4f6fb;
+}
+
+.brand p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: #8a91a6;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #0e1017;
+  border-right: 1px solid #1f2330;
+}
+
+.panel {
+  background: #131722;
+  border: 1px solid #212636;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #8fb4ff;
+}
+
+.hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #767d92;
+  line-height: 1.4;
+}
+
+.btn {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #2a3145;
+  background: #1a1f2e;
+  color: #e8eaf0;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.btn:hover {
+  background: #212840;
+  border-color: #3a4468;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn--primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: #3b82f6;
+  color: white;
+  margin-bottom: 10px;
+}
+
+.btn--primary:hover {
+  background: linear-gradient(135deg, #4f8dfa, #3b6fe0);
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.pdb-id-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #2a3145;
+  background: #0e1119;
+  color: #e8eaf0;
+  font-size: 13px;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.sample-group + .sample-group {
+  margin-top: 10px;
+}
+
+.sample-label {
+  display: block;
+  font-size: 11px;
+  color: #6f7690;
+  margin-bottom: 6px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #2a3145;
+  background: #171b28;
+  color: #c9cde0;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chip:hover {
+  background: #232a3f;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.segmented {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #2a3145;
+  margin-bottom: 10px;
+}
+
+.segmented button {
+  flex: 1;
+  padding: 8px 6px;
+  background: #0e1119;
+  border: none;
+  color: #9096ac;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segmented button.active {
+  background: #3b82f6;
+  color: white;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #cbd0e2;
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+.switch-row input {
+  accent-color: #3b82f6;
+  width: 15px;
+  height: 15px;
+}
+
+.info-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  color: #8a91a6;
+}
+
+.info-list li strong {
+  color: #e8eaf0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.info-list__wide {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.info-list__wide strong {
+  text-align: left;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+/* ---------- cross-section axis rows ---------- */
+
+.axis-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #1c2130;
+}
+
+.axis-row:last-of-type {
+  border-bottom: none;
+}
+
+.axis-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 34px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #9096ac;
+  cursor: pointer;
+}
+
+.axis-toggle input {
+  display: none;
+}
+
+.axis-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #333a4d;
+  box-shadow: inset 0 0 0 2px #333a4d;
+  transition: box-shadow 0.15s, background 0.15s;
+}
+
+.axis-row--on .axis-toggle {
+  color: var(--axis-color);
+}
+
+.axis-row--on .axis-dot {
+  background: var(--axis-color);
+  box-shadow: 0 0 8px var(--axis-color);
+}
+
+.axis-range {
+  flex: 1;
+  accent-color: #3b82f6;
+}
+
+.axis-invert {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid #2a3145;
+  background: #171b28;
+  color: #9096ac;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.axis-invert--on {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+/* ---------- viewport ---------- */
+
+.viewport {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-host {
+  position: absolute;
+  inset: 0;
+}
+
+.canvas-host canvas {
+  display: block;
+}
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding: 40px;
+  text-align: center;
+}
+
+.empty-state p {
+  color: #5b6178;
+  font-size: 14px;
+  max-width: 360px;
+  line-height: 1.6;
+}
+
+.status-toast {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(19, 23, 34, 0.92);
+  border: 1px solid #2a3145;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: #c9cde0;
+  backdrop-filter: blur(6px);
+}
+
+.status-toast--error {
+  border-color: #7f1d2a;
+  background: rgba(60, 20, 25, 0.92);
+  color: #ffb4bd;
+}
+
+.drag-hint {
+  position: absolute;
+  inset: 10px;
+  border: 2px dashed transparent;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: transparent;
+  pointer-events: none;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.viewport--drag .drag-hint {
+  border-color: #3b82f6;
+  color: #a9c6ff;
+  background: rgba(59, 130, 246, 0.08);
+}

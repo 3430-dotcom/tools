@@ -5,15 +5,17 @@ import type { PDBRenderMode } from '../viewer/pdb'
 import type { Background } from '../viewer/SceneManager'
 import type { ModelInfo, ModelKind } from '../types'
 
+const SAMPLE_BASE = `${import.meta.env.BASE_URL}samples/`
+
 const PDB_SAMPLES = [
-  { label: '카페인 (Caffeine)', url: '/samples/caffeine.pdb' },
-  { label: '에탄올 (Ethanol)', url: '/samples/ethanol.pdb' },
-  { label: '아스피린 (Aspirin)', url: '/samples/aspirin.pdb' },
+  { label: '카페인 (Caffeine)', url: `${SAMPLE_BASE}caffeine.pdb` },
+  { label: '에탄올 (Ethanol)', url: `${SAMPLE_BASE}ethanol.pdb` },
+  { label: '아스피린 (Aspirin)', url: `${SAMPLE_BASE}aspirin.pdb` },
 ]
 
 const STL_SAMPLES = [
-  { label: '토러스 노트', url: '/samples/torus-knot.stl' },
-  { label: '기어 브래킷', url: '/samples/gear-bracket.stl' },
+  { label: '토러스 노트', url: `${SAMPLE_BASE}torus-knot.stl` },
+  { label: '기어 브래킷', url: `${SAMPLE_BASE}gear-bracket.stl` },
 ]
 
 const AXES: Axis[] = ['x', 'y', 'z']

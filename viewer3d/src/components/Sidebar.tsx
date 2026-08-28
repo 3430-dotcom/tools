@@ -82,15 +82,16 @@ export function Sidebar(props: SidebarProps) {
             value={idOrUrl}
             onChange={(e) => setIdOrUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}
-            placeholder="PDB ID 또는 .pdb/.stl URL"
+            placeholder="예: 1CRN 또는 https://.../model.stl"
           />
           <button className="btn" onClick={() => idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}>
             불러오기
           </button>
         </div>
         <p className="hint">
-          PDB ID(예: 1CRN)는 RCSB 단백질 데이터뱅크에서, URL은 .pdb/.stl 파일을 직접 가리키는 링크면 어디서든
-          (예: NASA 3D Resources, GitHub) 불러올 수 있어요. 사이트가 CORS를 막아두면 실패할 수 있습니다.
+          PDB ID(4자리, 예: 1CRN)를 입력하면 RCSB 단백질 데이터뱅크에서 바로 불러옵니다. 또는 .pdb/.stl 파일을
+          직접 가리키는 URL을 붙여넣으세요 (예: NASA 3D Resources, GitHub 등). 사이트가 CORS를 막아두면 실패할 수
+          있어요 — 그럴 땐 파일을 받아서 "파일 열기"로 올려주세요.
         </p>
 
         <div className="pdb-id-row">
@@ -99,12 +100,16 @@ export function Sidebar(props: SidebarProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && props.onSearch(searchQuery)}
-            placeholder="단백질/분자 이름으로 검색 (예: hemoglobin)"
+            placeholder="영문으로 검색, 예: hemoglobin"
           />
           <button className="btn" onClick={() => props.onSearch(searchQuery)} disabled={props.searching}>
             {props.searching ? '검색 중…' : '검색'}
           </button>
         </div>
+        <p className="hint">
+          단백질/분자의 <strong>영문 이름</strong>으로 검색하세요 (예: hemoglobin, insulin, alcohol dehydrogenase). RCSB는
+          영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다.
+        </p>
         {props.searchResults.length > 0 && (
           <ul className="search-results">
             {props.searchResults.map((r) => (

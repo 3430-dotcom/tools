@@ -95,6 +95,13 @@ export class SceneManager {
   /** Frames the camera/controls around the given bounding sphere. */
   frameObject(box: THREE.Box3) {
     const sphere = box.getBoundingSphere(new THREE.Sphere())
+    // An empty/degenerate box (e.g. a model with zero geometry) yields a
+    // non-finite center/radius; fall back to the origin so the camera never
+    // ends up at a NaN position, which would render a silent blank canvas.
+    if (!Number.isFinite(sphere.radius) || !Number.isFinite(sphere.center.x)) {
+      sphere.center.set(0, 0, 0)
+      sphere.radius = 1
+    }
     const radius = Math.max(sphere.radius, 0.001)
     const fovRad = (this.camera.fov * Math.PI) / 180
     const distance = (radius / Math.sin(fovRad / 2)) * 1.35

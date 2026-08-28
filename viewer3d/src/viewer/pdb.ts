@@ -31,12 +31,16 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     json: { atoms: [number, number, number, number[], string][] }
   }
 
+  const atoms = json.atoms
+  const atomCount = atoms.length
+  if (atomCount === 0) {
+    throw new Error('이 파일에서 원자 좌표를 찾지 못했습니다. PDB 형식(ATOM/HETATM 레코드)이 아니거나 지원하지 않는 항목일 수 있어요.')
+  }
+
   geometryAtoms.computeBoundingBox()
   const box = geometryAtoms.boundingBox ?? new THREE.Box3()
   const center = box.getCenter(new THREE.Vector3())
 
-  const atoms = json.atoms
-  const atomCount = atoms.length
   const positionAttr = geometryAtoms.getAttribute('position')
   const colorAttr = geometryAtoms.getAttribute('color')
 
@@ -233,7 +237,12 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
     throw new Error(`검색에 실패했습니다 (${res.status})`)
   }
   const data = (await res.json()) as { result_set?: { identifier: string }[] }
-  const ids = (data.result_set ?? []).map((r) => r.identifier)
+  // RCSB search can also surface computed structure models (e.g. "AF_AFP...")
+  // which live at a different URL scheme our simple downloader doesn't
+  // handle -- restrict to standard 4-character experimental entry IDs.
+  const ids = (data.result_set ?? [])
+    .map((r) => r.identifier)
+    .filter((id) => /^[0-9][A-Za-z0-9]{3}$/.test(id))
 
   const withTitles = await Promise.all(
     ids.map(async (id) => {

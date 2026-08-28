@@ -92,6 +92,13 @@ STYLE_PRESETS = {
         "axes.grid.axis": "y",
         "figure.figsize": (3.5, 2.6),
     },
+    # matplotlib 기본 모양 그대로: 사각 테두리(4면 spine), 채워진 범례 박스,
+    # 자동 색상 순환(tab10) 등 커스텀 프리셋을 전혀 얹지 않는다.
+    "matplotlib": {
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "figure.dpi": 150,
+    },
 }
 
 

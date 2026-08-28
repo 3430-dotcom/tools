@@ -64,33 +64,41 @@ def render_figure(
     n_series = len(series)
     bar_width = 0.8 / max(n_series, 1)
 
+    # "matplotlib" 스타일은 커스텀 마커/선/색 순환을 강제하지 않고 matplotlib의
+    # 기본 자동 색상 순환(axes.prop_cycle, tab10)과 기본 선/마커 모양을 그대로 쓴다.
+    use_default_cycle = style == "matplotlib"
+
     for i, s in enumerate(series):
         y = df[s.y_col].to_numpy(dtype=float)
         yerr = df[s.err_col].to_numpy(dtype=float) if s.err_col else None
-        color = COLOR_CYCLE[i % len(COLOR_CYCLE)]
-        marker = MARKER_CYCLE[i % len(MARKER_CYCLE)]
-        linestyle = LINESTYLE_CYCLE[i % len(LINESTYLE_CYCLE)]
+
+        color = None if use_default_cycle else COLOR_CYCLE[i % len(COLOR_CYCLE)]
+        marker = None if use_default_cycle else MARKER_CYCLE[i % len(MARKER_CYCLE)]
+        linestyle = "-" if use_default_cycle else LINESTYLE_CYCLE[i % len(LINESTYLE_CYCLE)]
 
         if kind == "line":
-            ax.errorbar(
+            container = ax.errorbar(
                 x, y, yerr=yerr,
                 label=s.label, color=color, marker=marker, linestyle=linestyle,
                 capsize=3, elinewidth=0.9, markeredgewidth=0.9,
             )
+            color = container.lines[0].get_color()
         elif kind == "scatter":
-            ax.errorbar(
+            container = ax.errorbar(
                 x, y, yerr=yerr,
-                label=s.label, color=color, marker=marker, linestyle="none",
+                label=s.label, color=color, marker=marker or "o", linestyle="none",
                 capsize=3, elinewidth=0.9, markeredgewidth=0.9,
             )
+            color = container.lines[0].get_color()
         else:  # bar
             offset = (i - (n_series - 1) / 2) * bar_width
             positions = np.arange(len(x)) + offset
-            ax.bar(
+            bars = ax.bar(
                 positions, y, width=bar_width, yerr=yerr,
                 label=s.label, color=color, edgecolor="black", linewidth=0.6,
                 capsize=3,
             )
+            color = bars.patches[0].get_facecolor()
 
         if trendline and kind != "bar" and len(x) >= 2:
             x_line, y_line, slope, intercept, r2 = _linear_trendline(

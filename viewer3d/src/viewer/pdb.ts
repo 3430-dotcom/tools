@@ -23,7 +23,7 @@ const BOND_RADIUS = 0.12
 const BALL_STICK_ATOM_SCALE = 0.28
 const UP = new THREE.Vector3(0, 1, 0)
 
-export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'ball-stick'): Promise<PDBModel> {
+export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'spacefill'): Promise<PDBModel> {
   const pdb = loader.parse(text)
   const { geometryAtoms, geometryBonds, json } = pdb as {
     geometryAtoms: THREE.BufferGeometry
@@ -200,4 +200,51 @@ export async function fetchPDBById(pdbId: string): Promise<string> {
     throw new Error(`PDB ID "${id}"를 불러오지 못했습니다 (${res.status})`)
   }
   return res.text()
+}
+
+export interface PDBSearchResult {
+  id: string
+  title: string
+}
+
+/**
+ * Searches the RCSB Protein Data Bank (the standard public hub for solved
+ * molecular structures) by free-text name, e.g. "hemoglobin" or "insulin".
+ * Uses RCSB's public, key-free search + data REST APIs.
+ */
+export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
+  const trimmed = query.trim()
+  if (!trimmed) return []
+
+  const searchQuery = {
+    query: {
+      type: 'terminal',
+      service: 'full_text',
+      parameters: { value: trimmed },
+    },
+    return_type: 'entry',
+    request_options: { paginate: { start: 0, rows: 8 } },
+  }
+  const searchUrl = `https://search.rcsb.org/rcsbsearch/v2/query?json=${encodeURIComponent(JSON.stringify(searchQuery))}`
+
+  const res = await fetch(searchUrl)
+  if (res.status === 204) return []
+  if (!res.ok) {
+    throw new Error(`검색에 실패했습니다 (${res.status})`)
+  }
+  const data = (await res.json()) as { result_set?: { identifier: string }[] }
+  const ids = (data.result_set ?? []).map((r) => r.identifier)
+
+  const withTitles = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
+        const entry = (await entryRes.json()) as { struct?: { title?: string } }
+        return { id, title: entry.struct?.title ?? id }
+      } catch {
+        return { id, title: id }
+      }
+    }),
+  )
+  return withTitles
 }

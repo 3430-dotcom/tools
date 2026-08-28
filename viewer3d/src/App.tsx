@@ -54,7 +54,10 @@ function App() {
           onShowHelpersChange={viewer.toggleHelpers}
           onFile={viewer.loadFile}
           onLoadSample={viewer.loadSampleUrl}
-          onLoadPdbId={viewer.loadPDBId}
+          onLoadFromInput={viewer.loadFromInput}
+          searchResults={viewer.searchResults}
+          searching={viewer.searching}
+          onSearch={viewer.searchPDBByName}
           onResetView={viewer.resetView}
           onScreenshot={() => {
             const data = viewer.screenshot()

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { AxisSlider } from './AxisSlider'
 import type { Axis, AxisState } from '../viewer/crossSection'
-import type { PDBRenderMode } from '../viewer/pdb'
+import type { PDBRenderMode, PDBSearchResult } from '../viewer/pdb'
 import type { Background } from '../viewer/SceneManager'
 import type { ModelInfo, ModelKind } from '../types'
 
@@ -44,14 +44,18 @@ interface SidebarProps {
   onShowHelpersChange: (v: boolean) => void
   onFile: (file: File) => void
   onLoadSample: (url: string, kind: 'pdb' | 'stl') => void
-  onLoadPdbId: (id: string) => void
+  onLoadFromInput: (value: string) => void
+  searchResults: PDBSearchResult[]
+  searching: boolean
+  onSearch: (query: string) => void
   onResetView: () => void
   onScreenshot: () => void
 }
 
 export function Sidebar(props: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [pdbId, setPdbId] = useState('1CRN')
+  const [idOrUrl, setIdOrUrl] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
 
   return (
     <aside className="sidebar">
@@ -75,15 +79,44 @@ export function Sidebar(props: SidebarProps) {
         <div className="pdb-id-row">
           <input
             className="text-input"
-            value={pdbId}
-            onChange={(e) => setPdbId(e.target.value)}
-            placeholder="PDB ID (예: 1CRN)"
-            maxLength={8}
+            value={idOrUrl}
+            onChange={(e) => setIdOrUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}
+            placeholder="PDB ID 또는 .pdb/.stl URL"
           />
-          <button className="btn" onClick={() => pdbId.trim() && props.onLoadPdbId(pdbId.trim())}>
-            RCSB에서 가져오기
+          <button className="btn" onClick={() => idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}>
+            불러오기
           </button>
         </div>
+        <p className="hint">
+          PDB ID(예: 1CRN)는 RCSB 단백질 데이터뱅크에서, URL은 .pdb/.stl 파일을 직접 가리키는 링크면 어디서든
+          (예: NASA 3D Resources, GitHub) 불러올 수 있어요. 사이트가 CORS를 막아두면 실패할 수 있습니다.
+        </p>
+
+        <div className="pdb-id-row">
+          <input
+            className="text-input"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && props.onSearch(searchQuery)}
+            placeholder="단백질/분자 이름으로 검색 (예: hemoglobin)"
+          />
+          <button className="btn" onClick={() => props.onSearch(searchQuery)} disabled={props.searching}>
+            {props.searching ? '검색 중…' : '검색'}
+          </button>
+        </div>
+        {props.searchResults.length > 0 && (
+          <ul className="search-results">
+            {props.searchResults.map((r) => (
+              <li key={r.id}>
+                <button className="search-result" onClick={() => props.onLoadFromInput(r.id)}>
+                  <span className="search-result__id">{r.id}</span>
+                  <span className="search-result__title">{r.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <div className="sample-group">
           <span className="sample-label">단백질 샘플</span>

@@ -2,9 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { SceneManager, type Background } from '../viewer/SceneManager'
 import { CrossSectionController, defaultAxisState, type Axis, type AxisState } from '../viewer/crossSection'
-import { loadPDBFromText, fetchPDBById, type PDBModel, type PDBRenderMode } from '../viewer/pdb'
+import { loadPDBFromText, fetchPDBById, searchPDB, type PDBModel, type PDBRenderMode, type PDBSearchResult } from '../viewer/pdb'
 import { parseSTL, type STLModel } from '../viewer/stl'
 import type { ModelInfo, ModelKind } from '../types'
+
+/** True for a raw browser fetch failure (CORS block, DNS, offline) as opposed to an app-thrown error with a real message. */
+function isNetworkError(e: unknown): boolean {
+  return e instanceof TypeError
+}
 
 export function useThreeViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -21,11 +26,13 @@ export function useThreeViewer() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [axisState, setAxisStateState] = useState<Record<Axis, AxisState>>(defaultAxisState())
-  const [renderMode, setRenderModeState] = useState<PDBRenderMode>('ball-stick')
+  const [renderMode, setRenderModeState] = useState<PDBRenderMode>('spacefill')
   const [wireframe, setWireframeState] = useState(false)
   const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
   const [showHelpers, setShowHelpers] = useState(true)
+  const [searchResults, setSearchResults] = useState<PDBSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
 
   useEffect(() => {
     const el = containerRef.current
@@ -186,6 +193,73 @@ export function useThreeViewer() {
     [loadPDBText, loadSTLBuffer],
   )
 
+  const loadFromUrl = useCallback(
+    async (url: string) => {
+      const lower = url.toLowerCase()
+      const kind = lower.endsWith('.stl') ? 'stl' : lower.endsWith('.pdb') || lower.endsWith('.ent') ? 'pdb' : null
+      if (!kind) {
+        setError('URL은 .pdb 또는 .stl 파일을 직접 가리켜야 합니다.')
+        return
+      }
+      setError(null)
+      setStatus('URL에서 불러오는 중...')
+      try {
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`파일을 불러오지 못했습니다 (${res.status})`)
+        if (kind === 'stl') {
+          loadSTLBuffer(await res.arrayBuffer())
+        } else {
+          await loadPDBText(await res.text())
+        }
+      } catch (e) {
+        // A failed fetch here is almost always the source site not sending
+        // CORS headers for cross-origin requests -- the browser blocks it
+        // before we ever see a real HTTP status.
+        setError(
+          isNetworkError(e)
+            ? '이 주소는 브라우저에서 직접 불러올 수 없습니다 (CORS 정책). 파일을 다운로드한 뒤 "파일 열기"로 업로드해보세요.'
+            : (e as Error).message,
+        )
+        setStatus(null)
+      }
+    },
+    [loadPDBText, loadSTLBuffer],
+  )
+
+  const loadFromInput = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim()
+      if (/^https?:\/\//i.test(trimmed)) {
+        await loadFromUrl(trimmed)
+      } else if (/^[0-9][a-zA-Z0-9]{3}$/.test(trimmed)) {
+        await loadPDBId(trimmed)
+      } else {
+        setError('PDB ID(예: 1CRN) 또는 .pdb/.stl 파일의 URL을 입력하세요.')
+      }
+    },
+    [loadFromUrl, loadPDBId],
+  )
+
+  const searchPDBByName = useCallback(async (query: string) => {
+    const trimmed = query.trim()
+    if (!trimmed) {
+      setSearchResults([])
+      return
+    }
+    setSearching(true)
+    setError(null)
+    try {
+      const results = await searchPDB(trimmed)
+      setSearchResults(results)
+      if (results.length === 0) setError(`"${trimmed}"에 대한 검색 결과가 없습니다.`)
+    } catch (e) {
+      setSearchResults([])
+      setError(isNetworkError(e) ? 'RCSB 검색 서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.' : (e as Error).message)
+    } finally {
+      setSearching(false)
+    }
+  }, [])
+
   const setAxis = useCallback(
     (axis: Axis, patch: Partial<AxisState>) => {
       const next = { ...axisStateRef.current, [axis]: { ...axisStateRef.current[axis], ...patch } }
@@ -259,8 +333,11 @@ export function useThreeViewer() {
     showHelpers,
     toggleHelpers,
     loadFile,
-    loadPDBId,
+    loadFromInput,
     loadSampleUrl,
+    searchResults,
+    searching,
+    searchPDBByName,
     resetView,
     screenshot,
   }

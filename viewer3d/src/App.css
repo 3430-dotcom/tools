@@ -127,6 +127,12 @@
   margin-bottom: 12px;
 }
 
+.pdb-id-row .btn {
+  width: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .text-input {
   flex: 1;
   min-width: 0;

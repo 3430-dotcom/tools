@@ -46,3 +46,10 @@ python -m academic_graph_generator data.csv \
 pip install pytest
 pytest academic_graph_generator/tests
 ```
+
+## 웹앱 (플롯 스튜디오)
+
+`web/plot-studio.html`은 위 CLI 로직을 브라우저에서 그대로 쓸 수 있게 포팅한
+단일 HTML 웹앱이다. CSV를 업로드하면 서버 없이 브라우저에서 바로 APA/IEEE/matplotlib
+스타일 그래프를 그리고 SVG·PNG로 저장할 수 있다. D3.js/PapaParse를 CDN에서
+불러오므로 인터넷이 연결된 상태에서 그냥 파일을 열면 동작한다.

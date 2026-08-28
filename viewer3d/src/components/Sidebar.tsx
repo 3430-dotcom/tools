@@ -28,6 +28,7 @@ const STL_SAMPLES = [
 const AXES: Axis[] = ['x', 'y', 'z']
 
 interface SidebarProps {
+  className?: string
   modelKind: ModelKind
   modelInfo: ModelInfo
   axisState: Record<Axis, AxisState>
@@ -58,7 +59,7 @@ export function Sidebar(props: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${props.className ?? ''}`}>
       <section className="panel">
         <h2>모델 불러오기</h2>
         <button className="btn btn--primary" onClick={() => fileInputRef.current?.click()}>

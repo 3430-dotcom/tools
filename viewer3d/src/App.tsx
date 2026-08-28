@@ -13,6 +13,7 @@ function download(dataUrl: string, filename: string) {
 function App() {
   const viewer = useThreeViewer()
   const [dragOver, setDragOver] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -24,9 +25,40 @@ function App() {
     [viewer],
   )
 
+  // On mobile the sidebar is a drawer over the canvas -- close it once a
+  // model actually starts loading so the result is immediately visible.
+  const loadFile = useCallback(
+    (file: File) => {
+      viewer.loadFile(file)
+      setSidebarOpen(false)
+    },
+    [viewer],
+  )
+  const loadSampleUrl = useCallback(
+    (url: string, kind: 'pdb' | 'stl') => {
+      viewer.loadSampleUrl(url, kind)
+      setSidebarOpen(false)
+    },
+    [viewer],
+  )
+  const loadFromInput = useCallback(
+    (value: string) => {
+      viewer.loadFromInput(value)
+      setSidebarOpen(false)
+    },
+    [viewer],
+  )
+
   return (
     <div className="app">
       <header className="app-header">
+        <button
+          className="menu-toggle"
+          aria-label={sidebarOpen ? '메뉴 닫기' : '메뉴 열기'}
+          onClick={() => setSidebarOpen((v) => !v)}
+        >
+          {sidebarOpen ? '✕' : '☰'}
+        </button>
         <div className="brand">
           <span className="brand-mark">◈</span>
           <div>
@@ -38,6 +70,7 @@ function App() {
 
       <main className="app-body">
         <Sidebar
+          className={sidebarOpen ? 'sidebar--open' : ''}
           modelKind={viewer.modelKind}
           modelInfo={viewer.modelInfo}
           axisState={viewer.axisState}
@@ -52,9 +85,9 @@ function App() {
           onBackgroundChange={viewer.setBackground}
           showHelpers={viewer.showHelpers}
           onShowHelpersChange={viewer.toggleHelpers}
-          onFile={viewer.loadFile}
-          onLoadSample={viewer.loadSampleUrl}
-          onLoadFromInput={viewer.loadFromInput}
+          onFile={loadFile}
+          onLoadSample={loadSampleUrl}
+          onLoadFromInput={loadFromInput}
           searchResults={viewer.searchResults}
           searching={viewer.searching}
           onSearch={viewer.searchPDBByName}
@@ -63,6 +96,11 @@ function App() {
             const data = viewer.screenshot()
             if (data) download(data, `viewer3d-${Date.now()}.png`)
           }}
+        />
+
+        <div
+          className={`sidebar-backdrop ${sidebarOpen ? 'sidebar-backdrop--visible' : ''}`}
+          onClick={() => setSidebarOpen(false)}
         />
 
         <div
@@ -78,7 +116,7 @@ function App() {
 
           {!viewer.modelKind && !viewer.status && (
             <div className="empty-state">
-              <p>PDB 또는 STL 파일을 드래그 앤 드롭하거나, 왼쪽에서 샘플을 선택하세요.</p>
+              <p>PDB 또는 STL 파일을 드래그 앤 드롭하거나, 메뉴에서 샘플을 선택하세요.</p>
             </div>
           )}
 

@@ -244,16 +244,27 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
     .map((r) => r.identifier)
     .filter((id) => /^[0-9][A-Za-z0-9]{3}$/.test(id))
 
-  const withTitles = await Promise.all(
-    ids.map(async (id) => {
+  // Fetch each candidate's title AND its actual legacy-PDB coordinate file,
+  // and drop anything with no ATOM/HETATM lines. Some entries (too many
+  // chains/atoms for the legacy format, sequence-only depositions, etc.)
+  // return a placeholder response with no usable coordinates instead of a
+  // clean 404 -- checking this here is the only reliable way to keep those
+  // out of the result list, since it's the exact same check the loader does.
+  const candidates = await Promise.all(
+    ids.map(async (id): Promise<PDBSearchResult | null> => {
       try {
-        const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
-        const entry = (await entryRes.json()) as { struct?: { title?: string } }
+        const [entry, pdbText] = await Promise.all([
+          fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`).then(
+            (r) => r.json() as Promise<{ struct?: { title?: string } }>,
+          ),
+          fetchPDBById(id),
+        ])
+        if (!/^(ATOM|HETATM)/m.test(pdbText)) return null
         return { id, title: entry.struct?.title ?? id }
       } catch {
-        return { id, title: id }
+        return null
       }
     }),
   )
-  return withTitles
+  return candidates.filter((c): c is PDBSearchResult => c !== null)
 }

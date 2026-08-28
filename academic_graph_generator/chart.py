@@ -12,6 +12,8 @@ from .data import Series
 from .styles import COLOR_CYCLE, LINESTYLE_CYCLE, MARKER_CYCLE, apply_style
 
 KIND_CHOICES = ("line", "scatter", "bar")
+LEGEND_CHOICES = ("auto", "on", "off")
+DEFAULT_FIGSIZE = (8.0, 4.5)  # 16:9
 
 _HANGUL_RE = re.compile(r"[가-힣]")
 
@@ -39,9 +41,15 @@ def render_figure(
     xlabel: str | None = None,
     ylabel: str | None = None,
     trendline: bool = False,
+    figsize: tuple[float, float] = DEFAULT_FIGSIZE,
+    legend: str = "auto",
+    legend_loc: str = "best",
+    colors: list[str] | None = None,
 ) -> Figure:
     if kind not in KIND_CHOICES:
         raise ValueError(f"알 수 없는 그래프 종류 '{kind}'. 선택 가능: {KIND_CHOICES}")
+    if legend not in LEGEND_CHOICES:
+        raise ValueError(f"알 수 없는 범례 옵션 '{legend}'. 선택 가능: {LEGEND_CHOICES}")
 
     text_fields = [title, xlabel, ylabel, x_col, *(s.label for s in series)]
     has_korean_text = any(v and _HANGUL_RE.search(str(v)) for v in text_fields)
@@ -60,7 +68,7 @@ def render_figure(
             stacklevel=2,
         )
 
-    fig = Figure()
+    fig = Figure(figsize=figsize)
     ax = fig.add_subplot(111)
 
     x = df[x_col].to_numpy()
@@ -69,13 +77,19 @@ def render_figure(
 
     # "matplotlib" 스타일은 커스텀 마커/선/색 순환을 강제하지 않고 matplotlib의
     # 기본 자동 색상 순환(axes.prop_cycle, tab10)과 기본 선/마커 모양을 그대로 쓴다.
-    use_default_cycle = style == "matplotlib"
+    # 단, 사용자가 --colors로 색상을 직접 지정하면 스타일과 무관하게 그 색을 우선한다.
+    use_default_cycle = style == "matplotlib" and not colors
 
     for i, s in enumerate(series):
         y = df[s.y_col].to_numpy(dtype=float)
         yerr = df[s.err_col].to_numpy(dtype=float) if s.err_col else None
 
-        color = None if use_default_cycle else COLOR_CYCLE[i % len(COLOR_CYCLE)]
+        if colors:
+            color = colors[i % len(colors)]
+        elif use_default_cycle:
+            color = None
+        else:
+            color = COLOR_CYCLE[i % len(COLOR_CYCLE)]
         marker = None if use_default_cycle else MARKER_CYCLE[i % len(MARKER_CYCLE)]
         linestyle = "-" if use_default_cycle else LINESTYLE_CYCLE[i % len(LINESTYLE_CYCLE)]
 
@@ -120,8 +134,9 @@ def render_figure(
     ax.set_xlabel(xlabel or x_col)
     ax.set_ylabel(ylabel or (series[0].y_col if len(series) == 1 else default_ylabel))
 
-    if n_series > 1 or trendline:
-        ax.legend(loc="best")
+    show_legend = (n_series > 1 or trendline) if legend == "auto" else (legend == "on")
+    if show_legend:
+        ax.legend(loc=legend_loc)
 
     fig.tight_layout()
     return fig

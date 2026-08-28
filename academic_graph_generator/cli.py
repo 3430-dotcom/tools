@@ -10,9 +10,19 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .chart import KIND_CHOICES, render_figure, save_figure
+from .chart import DEFAULT_FIGSIZE, KIND_CHOICES, LEGEND_CHOICES, render_figure, save_figure
 from .data import detect_series, load_csv
 from .styles import STYLE_PRESETS
+
+
+def _parse_figsize(value: str) -> tuple[float, float]:
+    try:
+        width_str, height_str = value.lower().split("x")
+        return float(width_str), float(height_str)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"'{value}'는 올바른 크기 형식이 아닙니다. '너비x높이'(인치) 형식으로 입력하세요. 예: 8x4.5"
+        ) from None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +48,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="선형 회귀 추세선과 R² 값을 함께 표시합니다.",
     )
     parser.add_argument(
+        "--figsize", type=_parse_figsize, default=DEFAULT_FIGSIZE,
+        help=f"그래프 크기 '너비x높이'(인치) (기본값: {DEFAULT_FIGSIZE[0]}x{DEFAULT_FIGSIZE[1]}, 16:9)",
+    )
+    parser.add_argument(
+        "--legend", choices=list(LEGEND_CHOICES), default="auto",
+        help="범례 표시 여부: auto(계열 2개 이상이거나 추세선 있으면 표시)/on/off (기본값: auto)",
+    )
+    parser.add_argument(
+        "--legend-loc", default="best",
+        help="범례 위치, matplotlib legend loc 문자열 (예: 'upper right', 'lower left', 기본값: best)",
+    )
+    parser.add_argument(
+        "--colors", nargs="+", default=None,
+        help="계열별 선/막대 색상을 순서대로 지정 (예: --colors blue red green). 지정하지 않으면 자동 순환",
+    )
+    parser.add_argument(
         "--output", default="graph",
         help="출력 파일 이름(확장자 제외, 기본값: graph)",
     )
@@ -59,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
             df, x_col, series,
             style=args.style, kind=args.kind, title=args.title,
             xlabel=args.xlabel, ylabel=args.ylabel, trendline=args.trendline,
+            figsize=args.figsize, legend=args.legend, legend_loc=args.legend_loc,
+            colors=args.colors,
         )
         saved = save_figure(fig, args.output, formats=tuple(args.formats))
     except (ValueError, FileNotFoundError) as exc:

@@ -44,9 +44,12 @@ def render_figure(
         raise ValueError(f"알 수 없는 그래프 종류 '{kind}'. 선택 가능: {KIND_CHOICES}")
 
     text_fields = [title, xlabel, ylabel, x_col, *(s.label for s in series)]
-    # 추세선을 그리면 범례에 "추세선"이라는 한글이 자동으로 들어가므로 함께 고려한다.
-    has_korean_text = trendline or any(v and _HANGUL_RE.search(str(v)) for v in text_fields)
+    has_korean_text = any(v and _HANGUL_RE.search(str(v)) for v in text_fields)
     korean_ok = apply_style(style, has_korean_text=has_korean_text)
+    # 사용자가 입력한 텍스트에 한글이 없으면 자동 생성 텍스트(추세선 라벨, 기본 y축 라벨)도
+    # 영어로 맞춰서 영문 전용 그래프에 불필요하게 한글 폰트가 끼어들지 않게 한다.
+    trend_word = "추세선" if has_korean_text else "trendline"
+    default_ylabel = "값" if has_korean_text else "value"
     if has_korean_text and not korean_ok:
         warnings.warn(
             "한글 라벨이 있지만 시스템에 한글 폰트가 설치되어 있지 않습니다. "
@@ -106,7 +109,7 @@ def render_figure(
             )
             ax.plot(
                 x_line, y_line, color=color, linestyle=":", linewidth=1.0, alpha=0.8,
-                label=f"{s.label} 추세선 (R²={r2:.3f})",
+                label=f"{s.label} {trend_word} (R²={r2:.3f})",
             )
 
     if kind == "bar":
@@ -115,7 +118,7 @@ def render_figure(
 
     ax.set_title(title or "")
     ax.set_xlabel(xlabel or x_col)
-    ax.set_ylabel(ylabel or (series[0].y_col if len(series) == 1 else "값"))
+    ax.set_ylabel(ylabel or (series[0].y_col if len(series) == 1 else default_ylabel))
 
     if n_series > 1 or trendline:
         ax.legend(loc="best")

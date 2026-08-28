@@ -121,7 +121,15 @@ def apply_style(style: str, has_korean_text: bool = False) -> bool:
     if not has_korean_text:
         return True
 
-    korean_font = _pick_korean_font(_KOREAN_SERIF_CANDIDATES + _KOREAN_SANS_CANDIDATES)
+    # 프리셋이 세리프체를 쓰기로 했으면 한글도 세리프 계열을 우선 탐색하고,
+    # 그렇지 않으면(예: matplotlib 기본 산세리프) 산세리프 한글 폰트를 우선한다.
+    wants_serif = mpl.rcParams["font.family"] == ["serif"]
+    candidates = (
+        _KOREAN_SERIF_CANDIDATES + _KOREAN_SANS_CANDIDATES
+        if wants_serif
+        else _KOREAN_SANS_CANDIDATES + _KOREAN_SERIF_CANDIDATES
+    )
+    korean_font = _pick_korean_font(candidates)
     if korean_font is None:
         return False
 

@@ -44,3 +44,27 @@ const gear = gearShape(12, 14, 18, 5)
 const gearGeom = new THREE.ExtrudeGeometry(gear, { depth: 6, bevelEnabled: true, bevelSize: 0.5, bevelThickness: 0.5, curveSegments: 24 })
 gearGeom.rotateX(Math.PI / 2)
 save('gear-bracket', gearGeom)
+
+save('torus', new THREE.TorusGeometry(8, 3, 24, 48))
+
+// Vase: a single closed lathe profile that goes up the outer wall and back
+// down the inner wall, so the revolved solid has a real hollow interior and
+// wall thickness -- cutting it actually reveals something, unlike a solid.
+function vaseProfile() {
+  const outerR = (y) => 5 + 3.2 * Math.sin((y / 20) * Math.PI * 0.9) + (y / 20) * 2
+  const wall = 1
+  const height = 20
+  const steps = 40
+  const pts = [new THREE.Vector2(0, 0)]
+  for (let i = 0; i <= steps; i++) {
+    const y = (i / steps) * height
+    pts.push(new THREE.Vector2(outerR(y), y))
+  }
+  for (let i = steps; i >= 0; i--) {
+    const y = (i / steps) * height
+    pts.push(new THREE.Vector2(Math.max(outerR(y) - wall, 0.001), y))
+  }
+  pts.push(new THREE.Vector2(0, 0.001))
+  return pts
+}
+save('vase', new THREE.LatheGeometry(vaseProfile(), 48))

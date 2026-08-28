@@ -8,14 +8,21 @@ import type { ModelInfo, ModelKind } from '../types'
 const SAMPLE_BASE = `${import.meta.env.BASE_URL}samples/`
 
 const PDB_SAMPLES = [
-  { label: '카페인 (Caffeine)', url: `${SAMPLE_BASE}caffeine.pdb` },
-  { label: '에탄올 (Ethanol)', url: `${SAMPLE_BASE}ethanol.pdb` },
-  { label: '아스피린 (Aspirin)', url: `${SAMPLE_BASE}aspirin.pdb` },
+  { label: '크램빈 (단백질)', url: `${SAMPLE_BASE}crambin.pdb` },
+  { label: '카페인', url: `${SAMPLE_BASE}caffeine.pdb` },
+  { label: '니코틴', url: `${SAMPLE_BASE}nicotine.pdb` },
+  { label: '콜레스테롤', url: `${SAMPLE_BASE}cholesterol.pdb` },
+  { label: '포도당', url: `${SAMPLE_BASE}glucose.pdb` },
+  { label: '아스피린', url: `${SAMPLE_BASE}aspirin.pdb` },
+  { label: '에탄올', url: `${SAMPLE_BASE}ethanol.pdb` },
+  { label: '풀러렌 (C60)', url: `${SAMPLE_BASE}buckyball.pdb` },
 ]
 
 const STL_SAMPLES = [
-  { label: '토러스 노트', url: `${SAMPLE_BASE}torus-knot.stl` },
+  { label: '꽃병 (속이 빈 모형)', url: `${SAMPLE_BASE}vase.stl` },
   { label: '기어 브래킷', url: `${SAMPLE_BASE}gear-bracket.stl` },
+  { label: '토러스 노트', url: `${SAMPLE_BASE}torus-knot.stl` },
+  { label: '도넛 토러스', url: `${SAMPLE_BASE}torus.stl` },
 ]
 
 const AXES: Axis[] = ['x', 'y', 'z']

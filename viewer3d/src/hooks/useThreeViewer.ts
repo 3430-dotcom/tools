@@ -23,7 +23,7 @@ export function useThreeViewer() {
   const [axisState, setAxisStateState] = useState<Record<Axis, AxisState>>(defaultAxisState())
   const [renderMode, setRenderModeState] = useState<PDBRenderMode>('ball-stick')
   const [wireframe, setWireframeState] = useState(false)
-  const [autoRotate, setAutoRotateState] = useState(true)
+  const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
   const [showHelpers, setShowHelpers] = useState(true)
 
@@ -32,7 +32,6 @@ export function useThreeViewer() {
     if (!el) return
     const manager = new SceneManager()
     manager.mount(el)
-    manager.setAutoRotate(true)
     sceneRef.current = manager
     setReady(true)
     return () => {

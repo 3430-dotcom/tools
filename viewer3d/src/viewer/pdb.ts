@@ -42,10 +42,16 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'ball-
 
   const elementCounts: Record<string, number> = {}
   const radii = new Float32Array(atomCount)
+  const positions: THREE.Vector3[] = new Array(atomCount)
   for (let i = 0; i < atomCount; i++) {
     const symbol = atoms[i][4] ?? 'C'
     radii[i] = elementRadius(symbol)
     elementCounts[symbol] = (elementCounts[symbol] ?? 0) + 1
+    positions[i] = new THREE.Vector3(
+      positionAttr.getX(i) - center.x,
+      positionAttr.getY(i) - center.y,
+      positionAttr.getZ(i) - center.z,
+    )
   }
 
   const atomMesh = new THREE.InstancedMesh(
@@ -55,30 +61,45 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'ball-
   )
   atomMesh.name = 'pdb-atoms'
 
-  const bondPos = geometryBonds.getAttribute('position')
-  const bondCount = bondPos ? bondPos.count / 2 : 0
+  // Most crystallographic PDB files (e.g. real protein structures) omit
+  // CONECT records for standard residues, relying on viewers to infer bonds
+  // from a chemical dictionary. Our loader has no such dictionary, so when
+  // CONECT data is too sparse to be useful, fall back to distance-based
+  // covalent bond perception instead of rendering a disconnected atom cloud.
+  const conectPos = geometryBonds.getAttribute('position')
+  const conectBondCount = conectPos ? conectPos.count / 2 : 0
+  const bondPairs: [THREE.Vector3, THREE.Vector3][] =
+    conectBondCount >= atomCount * 0.5
+      ? Array.from({ length: conectBondCount }, (_, i) => [
+          new THREE.Vector3(
+            conectPos.getX(i * 2) - center.x,
+            conectPos.getY(i * 2) - center.y,
+            conectPos.getZ(i * 2) - center.z,
+          ),
+          new THREE.Vector3(
+            conectPos.getX(i * 2 + 1) - center.x,
+            conectPos.getY(i * 2 + 1) - center.y,
+            conectPos.getZ(i * 2 + 1) - center.z,
+          ),
+        ])
+      : inferBondsByDistance(positions, radii)
+
   const bondMesh = new THREE.InstancedMesh(
     cylinderGeometry,
     new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5, metalness: 0.05 }),
-    Math.max(bondCount, 1),
+    Math.max(bondPairs.length, 1),
   )
   bondMesh.name = 'pdb-bonds'
 
   const m = new THREE.Matrix4()
-  const p = new THREE.Vector3()
   const q = new THREE.Quaternion()
   const s = new THREE.Vector3()
   const color = new THREE.Color()
 
   function applyAtoms(currentMode: PDBRenderMode) {
     for (let i = 0; i < atomCount; i++) {
-      p.set(
-        positionAttr.getX(i) - center.x,
-        positionAttr.getY(i) - center.y,
-        positionAttr.getZ(i) - center.z,
-      )
       const scale = currentMode === 'spacefill' ? radii[i] : radii[i] * BALL_STICK_ATOM_SCALE
-      m.compose(p, q.identity(), s.set(scale, scale, scale))
+      m.compose(positions[i], q.identity(), s.set(scale, scale, scale))
       atomMesh.setMatrixAt(i, m)
       color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
       atomMesh.setColorAt(i, color)
@@ -89,18 +110,10 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'ball-
   }
 
   function applyBonds(currentMode: PDBRenderMode) {
-    bondMesh.visible = currentMode === 'ball-stick' && bondCount > 0
+    bondMesh.visible = currentMode === 'ball-stick' && bondPairs.length > 0
     if (!bondMesh.visible) return
-    for (let i = 0; i < bondCount; i++) {
-      const ax = bondPos.getX(i * 2) - center.x
-      const ay = bondPos.getY(i * 2) - center.y
-      const az = bondPos.getZ(i * 2) - center.z
-      const bx = bondPos.getX(i * 2 + 1) - center.x
-      const by = bondPos.getY(i * 2 + 1) - center.y
-      const bz = bondPos.getZ(i * 2 + 1) - center.z
-
-      const start = new THREE.Vector3(ax, ay, az)
-      const end = new THREE.Vector3(bx, by, bz)
+    for (let i = 0; i < bondPairs.length; i++) {
+      const [start, end] = bondPairs[i]
       const mid = start.clone().add(end).multiplyScalar(0.5)
       const dir = end.clone().sub(start)
       const length = dir.length() || 0.0001
@@ -124,7 +137,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'ball-
   return {
     group,
     atomCount,
-    bondCount,
+    bondCount: bondPairs.length,
     elementCounts,
     box: localBox,
     setRenderMode: (newMode: PDBRenderMode) => {
@@ -132,6 +145,52 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'ball-
       applyBonds(newMode)
     },
   }
+}
+
+const BOND_TOLERANCE = 1.15
+const MAX_BOND_LENGTH = 2.2
+const MIN_BOND_LENGTH = 0.35
+
+/** Grid-accelerated covalent bond perception: connects atoms within ~sum-of-covalent-radii. */
+function inferBondsByDistance(positions: THREE.Vector3[], radii: Float32Array): [THREE.Vector3, THREE.Vector3][] {
+  const cellSize = MAX_BOND_LENGTH
+  const cellOf = (v: THREE.Vector3): [number, number, number] => [
+    Math.floor(v.x / cellSize),
+    Math.floor(v.y / cellSize),
+    Math.floor(v.z / cellSize),
+  ]
+  const key = (x: number, y: number, z: number) => `${x},${y},${z}`
+
+  const grid = new Map<string, number[]>()
+  for (let i = 0; i < positions.length; i++) {
+    const [cx, cy, cz] = cellOf(positions[i])
+    const k = key(cx, cy, cz)
+    const bucket = grid.get(k)
+    if (bucket) bucket.push(i)
+    else grid.set(k, [i])
+  }
+
+  const pairs: [THREE.Vector3, THREE.Vector3][] = []
+  for (let i = 0; i < positions.length; i++) {
+    const [cx, cy, cz] = cellOf(positions[i])
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const bucket = grid.get(key(cx + dx, cy + dy, cz + dz))
+          if (!bucket) continue
+          for (const j of bucket) {
+            if (j <= i) continue
+            const dist = positions[i].distanceTo(positions[j])
+            const cutoff = Math.min((radii[i] + radii[j]) * BOND_TOLERANCE, MAX_BOND_LENGTH)
+            if (dist > MIN_BOND_LENGTH && dist <= cutoff) {
+              pairs.push([positions[i], positions[j]])
+            }
+          }
+        }
+      }
+    }
+  }
+  return pairs
 }
 
 export async function fetchPDBById(pdbId: string): Promise<string> {

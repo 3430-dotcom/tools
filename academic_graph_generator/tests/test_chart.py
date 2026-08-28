@@ -48,6 +48,50 @@ def test_invalid_kind_raises(df):
         render_figure(df, "x", series, kind="pie")
 
 
+def test_invalid_legend_option_raises(df):
+    series = [Series(label="y", y_col="y", err_col=None)]
+    with pytest.raises(ValueError, match="알 수 없는 범례 옵션"):
+        render_figure(df, "x", series, kind="line", legend="sometimes")
+
+
+def test_default_figsize_is_16_9(df):
+    series = [Series(label="y", y_col="y", err_col=None)]
+    fig = render_figure(df, "x", series, kind="line")
+    width, height = fig.get_size_inches()
+    assert round(width / height, 2) == round(16 / 9, 2)
+
+
+def test_custom_figsize_applied(df):
+    series = [Series(label="y", y_col="y", err_col=None)]
+    fig = render_figure(df, "x", series, kind="line", figsize=(5.0, 5.0))
+    assert tuple(fig.get_size_inches()) == (5.0, 5.0)
+
+
+def test_legend_off_hides_legend_even_with_trendline(df):
+    series = [Series(label="y", y_col="y", err_col=None)]
+    fig = render_figure(df, "x", series, kind="line", trendline=True, legend="off")
+    assert fig.axes[0].get_legend() is None
+
+
+def test_legend_on_shows_legend_for_single_series(df):
+    series = [Series(label="y", y_col="y", err_col=None)]
+    fig = render_figure(df, "x", series, kind="line", legend="on")
+    assert fig.axes[0].get_legend() is not None
+
+
+def test_custom_colors_applied_in_order(df):
+    df2 = df.assign(z=df["y"] * 2)
+    series = [
+        Series(label="y", y_col="y", err_col=None),
+        Series(label="z", y_col="z", err_col=None),
+    ]
+    fig = render_figure(df2, "x", series, kind="line", colors=["red", "blue"])
+    ax = fig.axes[0]
+    import matplotlib.colors as mcolors
+    assert mcolors.to_rgba(ax.containers[0].lines[0].get_color()) == mcolors.to_rgba("red")
+    assert mcolors.to_rgba(ax.containers[1].lines[0].get_color()) == mcolors.to_rgba("blue")
+
+
 def test_save_figure_writes_requested_formats(df, tmp_path):
     series = [Series(label="y", y_col="y", err_col=None)]
     fig = render_figure(df, "x", series, kind="line")

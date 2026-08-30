@@ -244,27 +244,23 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
     .map((r) => r.identifier)
     .filter((id) => /^[0-9][A-Za-z0-9]{3}$/.test(id))
 
-  // Fetch each candidate's title AND its actual legacy-PDB coordinate file,
-  // and drop anything with no ATOM/HETATM lines. Some entries (too many
-  // chains/atoms for the legacy format, sequence-only depositions, etc.)
-  // return a placeholder response with no usable coordinates instead of a
-  // clean 404 -- checking this here is the only reliable way to keep those
-  // out of the result list, since it's the exact same check the loader does.
-  const candidates = await Promise.all(
-    ids.map(async (id): Promise<PDBSearchResult | null> => {
+  // Fetch each candidate's title (best-effort, one lightweight request per
+  // result). We used to also fetch the full legacy-PDB file up front to
+  // filter out coordinate-less entries, but that doubled the request count
+  // (up to 16 in-flight requests for 8 results) and made search unreliable
+  // on slower/restrictive networks -- a single flaky request would silently
+  // drop an otherwise perfectly loadable result. The rare unloadable entry
+  // is still caught with a clear error at load time (see loadPDBFromText).
+  const results = await Promise.all(
+    ids.map(async (id): Promise<PDBSearchResult> => {
       try {
-        const [entry, pdbText] = await Promise.all([
-          fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`).then(
-            (r) => r.json() as Promise<{ struct?: { title?: string } }>,
-          ),
-          fetchPDBById(id),
-        ])
-        if (!/^(ATOM|HETATM)/m.test(pdbText)) return null
+        const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
+        const entry = (await entryRes.json()) as { struct?: { title?: string } }
         return { id, title: entry.struct?.title ?? id }
       } catch {
-        return null
+        return { id, title: id }
       }
     }),
   )
-  return candidates.filter((c): c is PDBSearchResult => c !== null)
+  return results
 }

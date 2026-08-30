@@ -38,12 +38,39 @@ export function useThreeViewer() {
     const el = containerRef.current
     if (!el) return
     const manager = new SceneManager()
+    manager.setErrorHandler((err) => {
+      console.error('Render loop error:', err)
+      setError(`3D 렌더링 중 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`)
+      setStatus(null)
+    })
     manager.mount(el)
     sceneRef.current = manager
     setReady(true)
     return () => {
       manager.dispose()
       sceneRef.current = null
+    }
+  }, [])
+
+  // Last-resort net: without this, an error thrown outside our own
+  // try/catch blocks (a stray event handler, an unhandled promise
+  // rejection) fails completely silently -- no banner, no console access
+  // on a locked-down browser, nothing. Force it onto the screen instead.
+  useEffect(() => {
+    const onError = (e: ErrorEvent) => {
+      console.error('Unhandled error:', e.error ?? e.message)
+      setError(`예상치 못한 오류가 발생했습니다: ${e.message}`)
+    }
+    const onRejection = (e: PromiseRejectionEvent) => {
+      console.error('Unhandled rejection:', e.reason)
+      const reason = e.reason instanceof Error ? e.reason.message : String(e.reason)
+      setError(`예상치 못한 오류가 발생했습니다: ${reason}`)
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
     }
   }, [])
 

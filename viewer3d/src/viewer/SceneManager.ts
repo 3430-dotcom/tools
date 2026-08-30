@@ -14,6 +14,7 @@ export class SceneManager {
   private resizeObserver: ResizeObserver
   private frameId = 0
   private disposed = false
+  private onError: ((err: unknown) => void) | null = null
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true, preserveDrawingBuffer: true })
@@ -65,16 +66,33 @@ export class SceneManager {
     this.renderer.setSize(clientWidth, clientHeight)
   }
 
+  /** Reports any error thrown inside the render loop, which would otherwise fail silently with no visible trace. */
+  setErrorHandler(handler: (err: unknown) => void) {
+    this.onError = handler
+  }
+
   private animate() {
     if (this.disposed) return
-    this.controls.update()
-    this.renderer.render(this.scene, this.camera)
+    try {
+      this.controls.update()
+      this.renderer.render(this.scene, this.camera)
+    } catch (err) {
+      this.onError?.(err)
+      this.onError = null // report once; keep retrying frames in case it's transient
+    }
     this.frameId = requestAnimationFrame(this.animate)
   }
 
   setBackground(mode: Background) {
+    // No fog: the scene has no distant background geometry to atmospherically
+    // fade (no ground plane, nothing far from the model), so fog only ever
+    // acted on the model itself. Its fixed density was tuned against small
+    // sample models -- for a larger structure (e.g. a multi-chain protein
+    // with a much bigger bounding radius), the camera backs up proportionally
+    // further to frame it, and at that distance fixed-density exponential
+    // fog fades the entire model into the exact background color: a total,
+    // silent, no-error disappearance.
     this.scene.background = new THREE.Color(mode === 'dark' ? 0x11141c : 0xeef1f7)
-    this.scene.fog = mode === 'dark' ? new THREE.FogExp2(0x11141c, 0.012) : null
   }
 
   setAutoRotate(enabled: boolean) {

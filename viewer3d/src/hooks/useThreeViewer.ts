@@ -123,7 +123,13 @@ export function useThreeViewer() {
         const text = await fetchPDBById(id)
         await loadPDBText(text)
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'PDB ID를 불러오지 못했습니다.')
+        setError(
+          isNetworkError(e)
+            ? 'RCSB 서버에 연결할 수 없습니다 (브라우저 CORS 정책이거나 네트워크 문제일 수 있어요).'
+            : e instanceof Error
+              ? e.message
+              : 'PDB ID를 불러오지 못했습니다.',
+        )
         setStatus(null)
       }
     },

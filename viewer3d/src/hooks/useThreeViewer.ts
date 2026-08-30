@@ -151,6 +151,7 @@ export function useThreeViewer() {
           bondCount: model.bondCount,
           elementCounts: model.elementCounts,
           metadata: model.metadata,
+          hasCartoon: model.hasCartoon,
         })
         setStatus(null)
       } catch (e) {

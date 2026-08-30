@@ -8,6 +8,7 @@ export interface PDBInfo {
   bondCount: number
   elementCounts: Record<string, number>
   metadata: PDBMetadata
+  hasCartoon: boolean
 }
 
 export interface STLInfo {

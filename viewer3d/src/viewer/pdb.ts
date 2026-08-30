@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 import { PDBLoader } from 'three/examples/jsm/loaders/PDBLoader.js'
 import { elementRadius } from './colors'
+import { buildCartoonGroup, CARTOON_COLORS, type SSClass } from './cartoon'
 
-export type PDBRenderMode = 'ball-stick' | 'spacefill'
+export type PDBRenderMode = 'ball-stick' | 'spacefill' | 'cartoon'
 export type PDBColorMode = 'element' | 'structure'
 
 export interface AtomDetail {
@@ -11,6 +12,7 @@ export interface AtomDetail {
   resName: string
   resSeq: number
   chain: string
+  isHetero: boolean
 }
 
 export interface PDBMetadata {
@@ -29,15 +31,10 @@ export interface PDBModel {
   elementCounts: Record<string, number>
   atomDetails: AtomDetail[]
   metadata: PDBMetadata
+  hasCartoon: boolean
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
   setColorMode: (mode: PDBColorMode) => void
-}
-
-const SS_COLORS = {
-  helix: new THREE.Color(0xff4d6d),
-  sheet: new THREE.Color(0xffd23f),
-  coil: new THREE.Color(0xdfe6f0),
 }
 
 const loader = new PDBLoader()
@@ -72,7 +69,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const atomDetails = parseAtomDetails(text)
   const metadata = parsePDBMetadata(text)
   const ssRanges = parseSecondaryStructureRanges(text)
-  const ssClass: ('helix' | 'sheet' | 'coil')[] = atomDetails.map((a) => classifySecondaryStructure(a, ssRanges))
+  const ssClass: SSClass[] = atomDetails.map((a) => classifySecondaryStructure(a, ssRanges))
 
   geometryAtoms.computeBoundingBox()
   const box = geometryAtoms.boundingBox ?? new THREE.Box3()
@@ -143,7 +140,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       m.compose(positions[i], q.identity(), s.set(scale, scale, scale))
       atomMesh.setMatrixAt(i, m)
       if (currentColorMode === 'structure') {
-        color.copy(SS_COLORS[ssClass[i]])
+        color.copy(CARTOON_COLORS[ssClass[i]])
       } else {
         color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
       }
@@ -170,13 +167,22 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     bondMesh.instanceMatrix.needsUpdate = true
   }
 
+  const cartoonGroup = buildCartoonGroup(positions, atomDetails, ssClass)
+  cartoonGroup.visible = false
+
+  function applyMode(currentMode: PDBRenderMode) {
+    atomMesh.visible = currentMode !== 'cartoon'
+    cartoonGroup.visible = currentMode === 'cartoon'
+  }
+
   let currentRenderMode = mode
   let currentColorMode: PDBColorMode = 'element'
   applyAtoms(currentRenderMode, currentColorMode)
   applyBonds(currentRenderMode)
+  applyMode(currentRenderMode)
 
   const group = new THREE.Group()
-  group.add(atomMesh, bondMesh)
+  group.add(atomMesh, bondMesh, cartoonGroup)
   group.name = 'pdb-model'
 
   const localBox = new THREE.Box3().setFromObject(group)
@@ -189,11 +195,13 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     elementCounts,
     atomDetails,
     metadata,
+    hasCartoon: cartoonGroup.children.length > 0,
     box: localBox,
     setRenderMode: (newMode: PDBRenderMode) => {
       currentRenderMode = newMode
       applyAtoms(currentRenderMode, currentColorMode)
       applyBonds(currentRenderMode)
+      applyMode(currentRenderMode)
     },
     setColorMode: (newColorMode: PDBColorMode) => {
       currentColorMode = newColorMode
@@ -219,6 +227,7 @@ function parseAtomDetails(text: string): AtomDetail[] {
       resName: line.slice(17, 20).trim(),
       resSeq: parseInt(line.slice(22, 26), 10) || 0,
       chain: line.slice(21, 22).trim() || '-',
+      isHetero: line.slice(0, 6) === 'HETATM',
     })
   }
   return details
@@ -254,40 +263,51 @@ function parseSecondaryStructureRanges(text: string): SSRange[] {
   return ranges
 }
 
-function classifySecondaryStructure(atom: AtomDetail, ranges: SSRange[]): 'helix' | 'sheet' | 'coil' {
+function classifySecondaryStructure(atom: AtomDetail, ranges: SSRange[]): SSClass {
   for (const r of ranges) {
     if (r.chain === atom.chain && atom.resSeq >= r.start && atom.resSeq <= r.end) return r.kind
   }
   return 'coil'
 }
 
+/**
+ * Some generators (e.g. the CACTUS structure service behind our small-molecule
+ * samples) pad every header line with a legacy card ID like "NONE   2" in the
+ * far-right columns even when the real field content is blank -- strip that
+ * off so an empty TITLE doesn't come through as the literal text "NONE 2".
+ */
+function cleanHeaderField(value: string): string | null {
+  const cleaned = value.replace(/\s*NONE\s+\d+\s*$/, '').trim()
+  return cleaned || null
+}
+
 /** Best-effort extraction of the handful of PDB header fields worth showing to a viewer. */
 function parsePDBMetadata(text: string): PDBMetadata {
   const lines = text.split('\n')
 
-  const titleParts = lines.filter((l) => l.slice(0, 5) === 'TITLE').map((l) => l.slice(10).trim())
-  const title = titleParts.length ? titleParts.join(' ').replace(/\s+/g, ' ').trim() : null
+  const titleParts = lines.filter((l) => l.slice(0, 5) === 'TITLE').map((l) => cleanHeaderField(l.slice(10)) ?? '')
+  const title = cleanHeaderField(titleParts.join(' ').replace(/\s+/g, ' '))
 
   const compndText = lines
     .filter((l) => l.slice(0, 6) === 'COMPND')
-    .map((l) => l.slice(10))
+    .map((l) => cleanHeaderField(l.slice(10)) ?? '')
     .join(' ')
   const moleculeMatch = compndText.match(/MOLECULE:\s*([^;]+);/)
   const organismText = lines
     .filter((l) => l.slice(0, 6) === 'SOURCE')
-    .map((l) => l.slice(10))
+    .map((l) => cleanHeaderField(l.slice(10)) ?? '')
     .join(' ')
   const organismMatch = organismText.match(/ORGANISM_SCIENTIFIC:\s*([^;]+);/)
 
   const expdtaLine = lines.find((l) => l.slice(0, 6) === 'EXPDTA')
-  const method = expdtaLine ? expdtaLine.slice(10).trim().replace(/\s+/g, ' ') : null
+  const method = expdtaLine ? cleanHeaderField(expdtaLine.slice(10).replace(/\s+/g, ' ')) : null
 
   const helixCount = lines.filter((l) => l.slice(0, 5) === 'HELIX').length
   const sheetCount = lines.filter((l) => l.slice(0, 5) === 'SHEET').length
 
   return {
-    title: title || moleculeMatch?.[1]?.trim() || null,
-    organism: organismMatch?.[1]?.trim() ?? null,
+    title: title || cleanHeaderField(moleculeMatch?.[1] ?? ''),
+    organism: cleanHeaderField(organismMatch?.[1] ?? ''),
     method,
     helixCount,
     sheetCount,

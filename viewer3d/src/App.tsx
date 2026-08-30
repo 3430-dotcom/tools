@@ -172,6 +172,15 @@ function App() {
             </div>
           )}
 
+          {viewer.modelInfo?.kind === 'pdb' && viewer.renderMode === 'cartoon' && !viewer.modelInfo.hasCartoon && (
+            <div className="empty-state">
+              <p>
+                이 파일에는 단백질 골격(연속된 CA 원자)이 없어 카툰으로 표시할 게 없어요. 작은 분자는 Ball &amp; Stick
+                또는 Spacefill을 사용해보세요.
+              </p>
+            </div>
+          )}
+
           {viewer.modelKind === 'pdb' && !viewer.selectedAtom && (
             <div className="viewport-hint">원자를 클릭하면 정보가 표시됩니다</div>
           )}

@@ -7,6 +7,7 @@ import {
   fetchPDBById,
   searchPDB,
   type AtomDetail,
+  type PDBColorMode,
   type PDBModel,
   type PDBRenderMode,
   type PDBSearchResult,
@@ -35,6 +36,7 @@ export function useThreeViewer() {
   const [error, setError] = useState<string | null>(null)
   const [axisState, setAxisStateState] = useState<Record<Axis, AxisState>>(defaultAxisState())
   const [renderMode, setRenderModeState] = useState<PDBRenderMode>('spacefill')
+  const [colorMode, setColorModeState] = useState<PDBColorMode>('element')
   const [wireframe, setWireframeState] = useState(false)
   const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
@@ -137,6 +139,7 @@ export function useThreeViewer() {
         const model = await loadPDBFromText(text, renderMode)
         pdbModelRef.current = model
         stlModelRef.current = null
+        setColorModeState('element')
         const materials = model.group.children
           .filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
           .map((c) => c.material as THREE.Material)
@@ -324,6 +327,11 @@ export function useThreeViewer() {
     pdbModelRef.current?.setRenderMode(mode)
   }, [])
 
+  const setColorMode = useCallback((mode: PDBColorMode) => {
+    setColorModeState(mode)
+    pdbModelRef.current?.setColorMode(mode)
+  }, [])
+
   const setWireframe = useCallback((value: boolean) => {
     setWireframeState(value)
     const mat = stlModelRef.current?.mesh.material as THREE.MeshStandardMaterial | undefined
@@ -383,6 +391,8 @@ export function useThreeViewer() {
     setAxis,
     renderMode,
     setRenderMode,
+    colorMode,
+    setColorMode,
     wireframe,
     setWireframe,
     autoRotate,

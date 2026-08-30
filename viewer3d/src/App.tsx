@@ -78,6 +78,8 @@ function App() {
           onAxisChange={viewer.setAxis}
           renderMode={viewer.renderMode}
           onRenderModeChange={viewer.setRenderMode}
+          colorMode={viewer.colorMode}
+          onColorModeChange={viewer.setColorMode}
           wireframe={viewer.wireframe}
           onWireframeChange={viewer.setWireframe}
           autoRotate={viewer.autoRotate}
@@ -129,6 +131,15 @@ function App() {
               }
             }}
           />
+
+          {viewer.modelInfo?.kind === 'pdb' && (viewer.modelInfo.metadata.title || viewer.modelInfo.metadata.organism) && (
+            <div className="viewport-caption">
+              {viewer.modelInfo.metadata.title && <div className="viewport-caption__title">{viewer.modelInfo.metadata.title}</div>}
+              {viewer.modelInfo.metadata.organism && (
+                <div className="viewport-caption__sub">{viewer.modelInfo.metadata.organism}</div>
+              )}
+            </div>
+          )}
 
           {viewer.selectedAtom && (
             <div className="atom-info-card">

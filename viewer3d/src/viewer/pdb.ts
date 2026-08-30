@@ -3,6 +3,7 @@ import { PDBLoader } from 'three/examples/jsm/loaders/PDBLoader.js'
 import { elementRadius } from './colors'
 
 export type PDBRenderMode = 'ball-stick' | 'spacefill'
+export type PDBColorMode = 'element' | 'structure'
 
 export interface AtomDetail {
   element: string
@@ -30,6 +31,13 @@ export interface PDBModel {
   metadata: PDBMetadata
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
+  setColorMode: (mode: PDBColorMode) => void
+}
+
+const SS_COLORS = {
+  helix: new THREE.Color(0xff4d6d),
+  sheet: new THREE.Color(0xffd23f),
+  coil: new THREE.Color(0xdfe6f0),
 }
 
 const loader = new PDBLoader()
@@ -63,6 +71,8 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   // instance can be traced back to a residue and chain on click.
   const atomDetails = parseAtomDetails(text)
   const metadata = parsePDBMetadata(text)
+  const ssRanges = parseSecondaryStructureRanges(text)
+  const ssClass: ('helix' | 'sheet' | 'coil')[] = atomDetails.map((a) => classifySecondaryStructure(a, ssRanges))
 
   geometryAtoms.computeBoundingBox()
   const box = geometryAtoms.boundingBox ?? new THREE.Box3()
@@ -127,12 +137,16 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const s = new THREE.Vector3()
   const color = new THREE.Color()
 
-  function applyAtoms(currentMode: PDBRenderMode) {
+  function applyAtoms(currentMode: PDBRenderMode, currentColorMode: PDBColorMode) {
     for (let i = 0; i < atomCount; i++) {
       const scale = currentMode === 'spacefill' ? radii[i] : radii[i] * BALL_STICK_ATOM_SCALE
       m.compose(positions[i], q.identity(), s.set(scale, scale, scale))
       atomMesh.setMatrixAt(i, m)
-      color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
+      if (currentColorMode === 'structure') {
+        color.copy(SS_COLORS[ssClass[i]])
+      } else {
+        color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
+      }
       atomMesh.setColorAt(i, color)
     }
     atomMesh.instanceMatrix.needsUpdate = true
@@ -156,8 +170,10 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     bondMesh.instanceMatrix.needsUpdate = true
   }
 
-  applyAtoms(mode)
-  applyBonds(mode)
+  let currentRenderMode = mode
+  let currentColorMode: PDBColorMode = 'element'
+  applyAtoms(currentRenderMode, currentColorMode)
+  applyBonds(currentRenderMode)
 
   const group = new THREE.Group()
   group.add(atomMesh, bondMesh)
@@ -175,8 +191,13 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     metadata,
     box: localBox,
     setRenderMode: (newMode: PDBRenderMode) => {
-      applyAtoms(newMode)
-      applyBonds(newMode)
+      currentRenderMode = newMode
+      applyAtoms(currentRenderMode, currentColorMode)
+      applyBonds(currentRenderMode)
+    },
+    setColorMode: (newColorMode: PDBColorMode) => {
+      currentColorMode = newColorMode
+      applyAtoms(currentRenderMode, currentColorMode)
     },
   }
 }
@@ -201,6 +222,43 @@ function parseAtomDetails(text: string): AtomDetail[] {
     })
   }
   return details
+}
+
+interface SSRange {
+  chain: string
+  start: number
+  end: number
+  kind: 'helix' | 'sheet'
+}
+
+/** Parses HELIX/SHEET record residue ranges so atoms can be colored by secondary structure. */
+function parseSecondaryStructureRanges(text: string): SSRange[] {
+  const ranges: SSRange[] = []
+  for (const line of text.split('\n')) {
+    if (line.slice(0, 5) === 'HELIX') {
+      const chain = line.slice(19, 20).trim()
+      const start = parseInt(line.slice(21, 25), 10)
+      const end = parseInt(line.slice(33, 37), 10)
+      if (chain && Number.isFinite(start) && Number.isFinite(end)) {
+        ranges.push({ chain, start, end, kind: 'helix' })
+      }
+    } else if (line.slice(0, 5) === 'SHEET') {
+      const chain = line.slice(21, 22).trim()
+      const start = parseInt(line.slice(22, 26), 10)
+      const end = parseInt(line.slice(33, 37), 10)
+      if (chain && Number.isFinite(start) && Number.isFinite(end)) {
+        ranges.push({ chain, start, end, kind: 'sheet' })
+      }
+    }
+  }
+  return ranges
+}
+
+function classifySecondaryStructure(atom: AtomDetail, ranges: SSRange[]): 'helix' | 'sheet' | 'coil' {
+  for (const r of ranges) {
+    if (r.chain === atom.chain && atom.resSeq >= r.start && atom.resSeq <= r.end) return r.kind
+  }
+  return 'coil'
 }
 
 /** Best-effort extraction of the handful of PDB header fields worth showing to a viewer. */

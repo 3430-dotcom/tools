@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { AxisSlider } from './AxisSlider'
 import type { Axis, AxisState } from '../viewer/crossSection'
-import type { PDBRenderMode, PDBSearchResult } from '../viewer/pdb'
+import type { PDBColorMode, PDBRenderMode, PDBSearchResult } from '../viewer/pdb'
 import type { Background } from '../viewer/SceneManager'
 import type { ModelInfo, ModelKind } from '../types'
 
@@ -35,6 +35,8 @@ interface SidebarProps {
   onAxisChange: (axis: Axis, patch: Partial<AxisState>) => void
   renderMode: PDBRenderMode
   onRenderModeChange: (mode: PDBRenderMode) => void
+  colorMode: PDBColorMode
+  onColorModeChange: (mode: PDBColorMode) => void
   wireframe: boolean
   onWireframeChange: (v: boolean) => void
   autoRotate: boolean
@@ -163,6 +165,29 @@ export function Sidebar(props: SidebarProps) {
               Spacefill
             </button>
           </div>
+
+          <h2>색상 기준</h2>
+          <div className="segmented">
+            <button
+              className={props.colorMode === 'element' ? 'active' : ''}
+              onClick={() => props.onColorModeChange('element')}
+            >
+              원소별
+            </button>
+            <button
+              className={props.colorMode === 'structure' ? 'active' : ''}
+              onClick={() => props.onColorModeChange('structure')}
+            >
+              2차 구조별
+            </button>
+          </div>
+          {props.colorMode === 'structure' && (
+            <p className="hint">
+              <span style={{ color: '#ff4d6d' }}>●</span> 알파 나선 &nbsp;
+              <span style={{ color: '#ffd23f' }}>●</span> 베타 시트 &nbsp;
+              <span style={{ color: '#dfe6f0' }}>●</span> 루프/코일
+            </p>
+          )}
         </section>
       )}
 

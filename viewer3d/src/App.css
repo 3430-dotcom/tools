@@ -522,6 +522,37 @@
   background: rgba(59, 130, 246, 0.08);
 }
 
+.viewport-caption {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(80%, 560px);
+  text-align: center;
+  pointer-events: none;
+}
+
+.viewport-caption__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f4f6fb;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewport-caption__sub {
+  margin-top: 2px;
+  font-size: 12px;
+  font-style: italic;
+  color: #9aa2b8;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .viewport-hint {
   position: absolute;
   bottom: 16px;

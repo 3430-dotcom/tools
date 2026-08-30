@@ -1,3 +1,5 @@
+import type { PDBMetadata } from './viewer/pdb'
+
 export type ModelKind = 'pdb' | 'stl' | null
 
 export interface PDBInfo {
@@ -5,6 +7,7 @@ export interface PDBInfo {
   atomCount: number
   bondCount: number
   elementCounts: Record<string, number>
+  metadata: PDBMetadata
 }
 
 export interface STLInfo {

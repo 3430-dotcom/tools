@@ -2,7 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { SceneManager, type Background } from '../viewer/SceneManager'
 import { CrossSectionController, defaultAxisState, type Axis, type AxisState } from '../viewer/crossSection'
-import { loadPDBFromText, fetchPDBById, searchPDB, type PDBModel, type PDBRenderMode, type PDBSearchResult } from '../viewer/pdb'
+import {
+  loadPDBFromText,
+  fetchPDBById,
+  searchPDB,
+  type AtomDetail,
+  type PDBModel,
+  type PDBRenderMode,
+  type PDBSearchResult,
+} from '../viewer/pdb'
 import { parseSTL, type STLModel } from '../viewer/stl'
 import type { ModelInfo, ModelKind } from '../types'
 
@@ -33,6 +41,7 @@ export function useThreeViewer() {
   const [showHelpers, setShowHelpers] = useState(true)
   const [searchResults, setSearchResults] = useState<PDBSearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [selectedAtom, setSelectedAtom] = useState<AtomDetail | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -86,6 +95,7 @@ export function useThreeViewer() {
     (object: THREE.Object3D, box: THREE.Box3, materials: THREE.Material[], capGeometry: THREE.BufferGeometry | null) => {
       const manager = sceneRef.current
       if (!manager) return
+      setSelectedAtom(null)
       if (crossSectionRef.current) {
         manager.scene.remove(crossSectionRef.current.helperGroup)
         crossSectionRef.current.dispose()
@@ -132,7 +142,13 @@ export function useThreeViewer() {
           .map((c) => c.material as THREE.Material)
         installModel(model.group, model.box, materials, null)
         setModelKind('pdb')
-        setModelInfo({ kind: 'pdb', atomCount: model.atomCount, bondCount: model.bondCount, elementCounts: model.elementCounts })
+        setModelInfo({
+          kind: 'pdb',
+          atomCount: model.atomCount,
+          bondCount: model.bondCount,
+          elementCounts: model.elementCounts,
+          metadata: model.metadata,
+        })
         setStatus(null)
       } catch (e) {
         setError(e instanceof Error ? e.message : 'PDB 파일을 불러오지 못했습니다.')
@@ -346,6 +362,16 @@ export function useThreeViewer() {
 
   const screenshot = useCallback(() => sceneRef.current?.screenshot() ?? null, [])
 
+  const pickAtom = useCallback((clientX: number, clientY: number) => {
+    const manager = sceneRef.current
+    const model = pdbModelRef.current
+    if (!manager || !model) return
+    const index = manager.pickInstance(clientX, clientY, model.atomMesh)
+    setSelectedAtom(index !== null ? model.atomDetails[index] : null)
+  }, [])
+
+  const clearSelectedAtom = useCallback(() => setSelectedAtom(null), [])
+
   return {
     containerRef,
     ready,
@@ -371,6 +397,9 @@ export function useThreeViewer() {
     searchResults,
     searching,
     searchPDBByName,
+    selectedAtom,
+    pickAtom,
+    clearSelectedAtom,
     resetView,
     screenshot,
   }

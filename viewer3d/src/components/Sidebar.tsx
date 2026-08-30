@@ -224,6 +224,32 @@ function InfoPanel({ modelInfo }: { modelInfo: ModelInfo }) {
       <h2>모델 정보</h2>
       {modelInfo.kind === 'pdb' ? (
         <ul className="info-list">
+          {modelInfo.metadata.title && (
+            <li className="info-list__wide">
+              <span>이름</span>
+              <strong>{modelInfo.metadata.title}</strong>
+            </li>
+          )}
+          {modelInfo.metadata.organism && (
+            <li className="info-list__wide">
+              <span>생물종</span>
+              <strong>{modelInfo.metadata.organism}</strong>
+            </li>
+          )}
+          {modelInfo.metadata.method && (
+            <li>
+              <span>실험 방법</span>
+              <strong>{modelInfo.metadata.method}</strong>
+            </li>
+          )}
+          {(modelInfo.metadata.helixCount > 0 || modelInfo.metadata.sheetCount > 0) && (
+            <li>
+              <span>2차 구조</span>
+              <strong>
+                나선 {modelInfo.metadata.helixCount} · 시트 {modelInfo.metadata.sheetCount}
+              </strong>
+            </li>
+          )}
           <li>
             <span>원자 수</span>
             <strong>{modelInfo.atomCount.toLocaleString()}</strong>

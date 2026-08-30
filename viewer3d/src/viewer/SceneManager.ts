@@ -15,6 +15,7 @@ export class SceneManager {
   private frameId = 0
   private disposed = false
   private onError: ((err: unknown) => void) | null = null
+  private raycaster = new THREE.Raycaster()
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true, preserveDrawingBuffer: true })
@@ -93,6 +94,16 @@ export class SceneManager {
     // fog fades the entire model into the exact background color: a total,
     // silent, no-error disappearance.
     this.scene.background = new THREE.Color(mode === 'dark' ? 0x11141c : 0xeef1f7)
+  }
+
+  /** Picks the InstancedMesh instance under a client (viewport) coordinate, or null if none hit. */
+  pickInstance(clientX: number, clientY: number, mesh: THREE.InstancedMesh): number | null {
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return null
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    this.raycaster.setFromCamera(ndc, this.camera)
+    const hit = this.raycaster.intersectObject(mesh)[0]
+    return hit?.instanceId ?? null
   }
 
   setAutoRotate(enabled: boolean) {

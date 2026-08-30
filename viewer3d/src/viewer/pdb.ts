@@ -4,11 +4,30 @@ import { elementRadius } from './colors'
 
 export type PDBRenderMode = 'ball-stick' | 'spacefill'
 
+export interface AtomDetail {
+  element: string
+  atomName: string
+  resName: string
+  resSeq: number
+  chain: string
+}
+
+export interface PDBMetadata {
+  title: string | null
+  organism: string | null
+  method: string | null
+  helixCount: number
+  sheetCount: number
+}
+
 export interface PDBModel {
   group: THREE.Group
+  atomMesh: THREE.InstancedMesh
   atomCount: number
   bondCount: number
   elementCounts: Record<string, number>
+  atomDetails: AtomDetail[]
+  metadata: PDBMetadata
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
 }
@@ -36,6 +55,14 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   if (atomCount === 0) {
     throw new Error('이 파일에서 원자 좌표를 찾지 못했습니다. PDB 형식(ATOM/HETATM 레코드)이 아니거나 지원하지 않는 항목일 수 있어요.')
   }
+
+  // PDBLoader's own parsed output only carries position/color/element per
+  // atom, not residue/chain -- re-scan the raw text ourselves, in the exact
+  // same order/predicate PDBLoader uses (ATOM or HETATM lines, top to
+  // bottom), so index i here lines up with atoms[i] and every rendered
+  // instance can be traced back to a residue and chain on click.
+  const atomDetails = parseAtomDetails(text)
+  const metadata = parsePDBMetadata(text)
 
   geometryAtoms.computeBoundingBox()
   const box = geometryAtoms.boundingBox ?? new THREE.Box3()
@@ -140,14 +167,72 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
 
   return {
     group,
+    atomMesh,
     atomCount,
     bondCount: bondPairs.length,
     elementCounts,
+    atomDetails,
+    metadata,
     box: localBox,
     setRenderMode: (newMode: PDBRenderMode) => {
       applyAtoms(newMode)
       applyBonds(newMode)
     },
+  }
+}
+
+function isAtomLine(line: string): boolean {
+  return line.slice(0, 4) === 'ATOM' || line.slice(0, 6) === 'HETATM'
+}
+
+/** Re-parses residue/chain/atom-name info directly, matching PDBLoader's atom order exactly. */
+function parseAtomDetails(text: string): AtomDetail[] {
+  const details: AtomDetail[] = []
+  for (const line of text.split('\n')) {
+    if (!isAtomLine(line)) continue
+    let element = line.slice(76, 78).trim()
+    if (!element) element = line.slice(12, 14).trim()
+    details.push({
+      element: element.charAt(0).toUpperCase() + element.slice(1).toLowerCase(),
+      atomName: line.slice(12, 16).trim(),
+      resName: line.slice(17, 20).trim(),
+      resSeq: parseInt(line.slice(22, 26), 10) || 0,
+      chain: line.slice(21, 22).trim() || '-',
+    })
+  }
+  return details
+}
+
+/** Best-effort extraction of the handful of PDB header fields worth showing to a viewer. */
+function parsePDBMetadata(text: string): PDBMetadata {
+  const lines = text.split('\n')
+
+  const titleParts = lines.filter((l) => l.slice(0, 5) === 'TITLE').map((l) => l.slice(10).trim())
+  const title = titleParts.length ? titleParts.join(' ').replace(/\s+/g, ' ').trim() : null
+
+  const compndText = lines
+    .filter((l) => l.slice(0, 6) === 'COMPND')
+    .map((l) => l.slice(10))
+    .join(' ')
+  const moleculeMatch = compndText.match(/MOLECULE:\s*([^;]+);/)
+  const organismText = lines
+    .filter((l) => l.slice(0, 6) === 'SOURCE')
+    .map((l) => l.slice(10))
+    .join(' ')
+  const organismMatch = organismText.match(/ORGANISM_SCIENTIFIC:\s*([^;]+);/)
+
+  const expdtaLine = lines.find((l) => l.slice(0, 6) === 'EXPDTA')
+  const method = expdtaLine ? expdtaLine.slice(10).trim().replace(/\s+/g, ' ') : null
+
+  const helixCount = lines.filter((l) => l.slice(0, 5) === 'HELIX').length
+  const sheetCount = lines.filter((l) => l.slice(0, 5) === 'SHEET').length
+
+  return {
+    title: title || moleculeMatch?.[1]?.trim() || null,
+    organism: organismMatch?.[1]?.trim() ?? null,
+    method,
+    helixCount,
+    sheetCount,
   }
 }
 

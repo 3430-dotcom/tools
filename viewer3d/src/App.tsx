@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import './App.css'
 import { useThreeViewer } from './hooks/useThreeViewer'
 import { Sidebar } from './components/Sidebar'
@@ -14,6 +14,7 @@ function App() {
   const viewer = useThreeViewer()
   const [dragOver, setDragOver] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -112,12 +113,56 @@ function App() {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          <div className="canvas-host" ref={viewer.containerRef} />
+          <div
+            className="canvas-host"
+            ref={viewer.containerRef}
+            onPointerDown={(e) => {
+              pointerDownPos.current = { x: e.clientX, y: e.clientY }
+            }}
+            onPointerUp={(e) => {
+              const down = pointerDownPos.current
+              pointerDownPos.current = null
+              // Only treat this as an atom pick if the pointer barely moved --
+              // otherwise every orbit-drag would also try to select an atom.
+              if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
+                viewer.pickAtom(e.clientX, e.clientY)
+              }
+            }}
+          />
+
+          {viewer.selectedAtom && (
+            <div className="atom-info-card">
+              <button className="atom-info-card__close" onClick={viewer.clearSelectedAtom} aria-label="닫기">
+                ✕
+              </button>
+              <div className="atom-info-card__element">{viewer.selectedAtom.element}</div>
+              <ul className="atom-info-card__detail">
+                <li>
+                  <span>원자</span>
+                  <strong>{viewer.selectedAtom.atomName || '-'}</strong>
+                </li>
+                <li>
+                  <span>잔기</span>
+                  <strong>
+                    {viewer.selectedAtom.resName} {viewer.selectedAtom.resSeq}
+                  </strong>
+                </li>
+                <li>
+                  <span>사슬</span>
+                  <strong>{viewer.selectedAtom.chain}</strong>
+                </li>
+              </ul>
+            </div>
+          )}
 
           {!viewer.modelKind && !viewer.status && (
             <div className="empty-state">
               <p>PDB 또는 STL 파일을 드래그 앤 드롭하거나, 메뉴에서 샘플을 선택하세요.</p>
             </div>
+          )}
+
+          {viewer.modelKind === 'pdb' && !viewer.selectedAtom && (
+            <div className="viewport-hint">원자를 클릭하면 정보가 표시됩니다</div>
           )}
 
           {viewer.status && <div className="status-toast">{viewer.status}</div>}

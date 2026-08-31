@@ -232,29 +232,49 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 180px;
+  gap: 6px;
+  max-height: 340px;
   overflow-y: auto;
 }
 
 .search-result {
   width: 100%;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border-radius: 8px;
   border: 1px solid #212636;
   background: #10131c;
   color: #c9cde0;
   font-size: 12px;
   cursor: pointer;
   text-align: left;
+  overflow: hidden;
 }
 
 .search-result:hover {
   border-color: #3b82f6;
   background: #171b28;
+}
+
+/* The thumbnail comes first in the DOM (top of the card) -- a quick visual
+   match cue students recognize (DNA helix, hemoglobin's four lobes, etc.)
+   faster than reading a 4-character ID. Falls back to text-only per result
+   if RCSB has no image for that entry (see Sidebar's onError handling). */
+.search-result__thumb {
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  background: #05070c;
+  display: block;
+}
+
+.search-result__text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
 }
 
 .search-result__id {

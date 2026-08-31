@@ -457,54 +457,68 @@ export function useThreeViewer() {
   const screenshot = useCallback(() => sceneRef.current?.screenshot() ?? null, [])
 
   /** Picks whichever of an atom or a bond is closer to the camera under this viewport coordinate. */
-  const pickTarget = useCallback((clientX: number, clientY: number) => {
-    const manager = sceneRef.current
-    const model = pdbModelRef.current
-    if (!manager || !model) return
-    const hit = manager.pickNearest(clientX, clientY, [model.atomMesh, model.bondMesh])
-
-    if (!hit) {
-      model.setSelectedAtom(null)
-      model.setSelectedBond(null)
-      setSelection(null)
-      return
-    }
-
-    if (hit.mesh === model.atomMesh) {
-      const index = hit.instanceId
-      model.setSelectedBond(null)
-      model.setSelectedAtom(index)
-      setSelection({
-        kind: 'atom',
-        ...model.atomDetails[index],
-        index,
-        position: model.positions[index].clone(),
-        bondCount: model.bondsForAtom(index).length,
-      })
-    } else {
-      const index = hit.instanceId
-      const [a, b] = model.bondAtomIndices[index]
-      const posA = model.positions[a]
-      const posB = model.positions[b]
-      model.setSelectedAtom(null)
-      model.setSelectedBond(index)
-      setSelection({
-        kind: 'bond',
-        index,
-        position: posA.clone().add(posB).multiplyScalar(0.5),
-        length: posA.distanceTo(posB),
-        atomA: model.atomDetails[a],
-        atomB: model.atomDetails[b],
-      })
-    }
+  // The disc caps read each atom's highlight state at recompute time (see
+  // pdb.ts), so a selection change has to trigger the same recompute the
+  // axis/mode/color-mode handlers already do -- otherwise a highlighted
+  // atom's cap stays whatever color it had until the next slider nudge.
+  const refreshCaps = useCallback((model: PDBModel) => {
+    if (crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
   }, [])
+
+  const pickTarget = useCallback(
+    (clientX: number, clientY: number) => {
+      const manager = sceneRef.current
+      const model = pdbModelRef.current
+      if (!manager || !model) return
+      const hit = manager.pickNearest(clientX, clientY, [model.atomMesh, model.bondMesh])
+
+      if (!hit) {
+        model.setSelectedAtom(null)
+        model.setSelectedBond(null)
+        setSelection(null)
+        refreshCaps(model)
+        return
+      }
+
+      if (hit.mesh === model.atomMesh) {
+        const index = hit.instanceId
+        model.setSelectedBond(null)
+        model.setSelectedAtom(index)
+        setSelection({
+          kind: 'atom',
+          ...model.atomDetails[index],
+          index,
+          position: model.positions[index].clone(),
+          bondCount: model.bondsForAtom(index).length,
+        })
+      } else {
+        const index = hit.instanceId
+        const [a, b] = model.bondAtomIndices[index]
+        const posA = model.positions[a]
+        const posB = model.positions[b]
+        model.setSelectedAtom(null)
+        model.setSelectedBond(index)
+        setSelection({
+          kind: 'bond',
+          index,
+          position: posA.clone().add(posB).multiplyScalar(0.5),
+          length: posA.distanceTo(posB),
+          atomA: model.atomDetails[a],
+          atomB: model.atomDetails[b],
+        })
+      }
+      refreshCaps(model)
+    },
+    [refreshCaps],
+  )
 
   const clearSelection = useCallback(() => {
     const model = pdbModelRef.current
     model?.setSelectedAtom(null)
     model?.setSelectedBond(null)
     setSelection(null)
-  }, [])
+    if (model) refreshCaps(model)
+  }, [refreshCaps])
 
   /** Projects a world-space point (e.g. the selected atom's position) to viewport-relative pixel coordinates. */
   const getScreenPosition = useCallback((pos: THREE.Vector3) => sceneRef.current?.projectToScreen(pos) ?? null, [])
@@ -533,14 +547,28 @@ export function useThreeViewer() {
     const enabledAxes = AXES.filter((a) => state[a].enabled)
     if (enabledAxes.length === 0) return false
 
-    const hitObj = manager.pickObject(
+    const hit = manager.pickObject(
       clientX,
       clientY,
       enabledAxes.map((a) => cs.dragHandles[a]),
     )
-    if (!hitObj) return false
-    const axis = enabledAxes.find((a) => cs.dragHandles[a] === hitObj)
+    if (!hit) return false
+    const axis = enabledAxes.find((a) => cs.dragHandles[a] === hit.object)
     if (!axis) return false
+
+    // The visible cut face sits exactly where the plane handle is, but an
+    // atom/bond's own (clip-invisible) near surface still extends past it
+    // toward the camera -- so if the model itself is at least as close,
+    // this pointerdown was meant to pick that, not grab the plane.
+    const solidMeshes: THREE.Object3D[] = pdbModelRef.current
+      ? [pdbModelRef.current.atomMesh, pdbModelRef.current.bondMesh]
+      : stlModelRef.current
+        ? [stlModelRef.current.mesh]
+        : []
+    if (solidMeshes.length > 0) {
+      const solidDistance = manager.nearestHitDistance(clientX, clientY, solidMeshes)
+      if (solidDistance !== null && solidDistance <= hit.distance) return false
+    }
 
     const radius = radiusRef.current
     const moveDir = AXIS_NORMALS[axis].clone().negate()

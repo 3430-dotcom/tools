@@ -529,6 +529,14 @@ export async function fetchPDBById(pdbId: string): Promise<string> {
 export interface PDBSearchResult {
   id: string
   title: string
+  /** RCSB's public structure-thumbnail image for this entry -- a quick visual match cue students recognize faster than a 4-character ID. */
+  thumbnailUrl: string
+}
+
+/** RCSB's public per-entry structure thumbnail (biological assembly render), no API key needed. */
+export function rcsbThumbnailUrl(id: string): string {
+  const lower = id.toLowerCase()
+  return `https://cdn.rcsb.org/images/structures/${lower}/${lower}_assembly-1.jpeg`
 }
 
 /**
@@ -576,9 +584,9 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
       try {
         const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
         const entry = (await entryRes.json()) as { struct?: { title?: string } }
-        return { id, title: entry.struct?.title ?? id }
+        return { id, title: entry.struct?.title ?? id, thumbnailUrl: rcsbThumbnailUrl(id) }
       } catch {
-        return { id, title: id }
+        return { id, title: id, thumbnailUrl: rcsbThumbnailUrl(id) }
       }
     }),
   )

@@ -61,6 +61,10 @@ export function Sidebar(props: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [idOrUrl, setIdOrUrl] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  // Thumbnails that failed to load (RCSB doesn't have an image for every
+  // entry) -- tracked so that one broken image cleanly falls back to the
+  // text-only result instead of showing a broken-image icon.
+  const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set())
 
   return (
     <aside className={`sidebar ${props.className ?? ''}`}>
@@ -120,8 +124,19 @@ export function Sidebar(props: SidebarProps) {
             {props.searchResults.map((r) => (
               <li key={r.id}>
                 <button className="search-result" onClick={() => props.onLoadFromInput(r.id)}>
-                  <span className="search-result__id">{r.id}</span>
-                  <span className="search-result__title">{r.title}</span>
+                  {!failedThumbnails.has(r.id) && (
+                    <img
+                      className="search-result__thumb"
+                      src={r.thumbnailUrl}
+                      alt=""
+                      loading="lazy"
+                      onError={() => setFailedThumbnails((prev) => new Set(prev).add(r.id))}
+                    />
+                  )}
+                  <div className="search-result__text">
+                    <span className="search-result__id">{r.id}</span>
+                    <span className="search-result__title">{r.title}</span>
+                  </div>
                 </button>
               </li>
             ))}

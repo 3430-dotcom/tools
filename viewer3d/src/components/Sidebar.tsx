@@ -45,6 +45,8 @@ interface SidebarProps {
   onBackgroundChange: (v: Background) => void
   showHelpers: boolean
   onShowHelpersChange: (v: boolean) => void
+  showCaption: boolean
+  onShowCaptionChange: (v: boolean) => void
   onFile: (file: File) => void
   onLoadSample: (url: string, kind: 'pdb' | 'stl') => void
   onLoadFromInput: (value: string) => void
@@ -235,6 +237,10 @@ export function Sidebar(props: SidebarProps) {
         <label className="switch-row">
           <input type="checkbox" checked={props.autoRotate} onChange={(e) => props.onAutoRotateChange(e.target.checked)} />
           자동 회전 (360°)
+        </label>
+        <label className="switch-row">
+          <input type="checkbox" checked={props.showCaption} onChange={(e) => props.onShowCaptionChange(e.target.checked)} />
+          분자 이름/생물종 표시
         </label>
         <div className="segmented">
           <button className={props.background === 'dark' ? 'active' : ''} onClick={() => props.onBackgroundChange('dark')}>

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import { useThreeViewer } from './hooks/useThreeViewer'
 import { Sidebar } from './components/Sidebar'
@@ -14,7 +14,19 @@ function App() {
   const viewer = useThreeViewer()
   const [dragOver, setDragOver] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [hintVisible, setHintVisible] = useState(false)
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+
+  // Show the "click an atom" hint only briefly right after a model loads --
+  // modelInfo gets a fresh object on every load, so this effect re-fires
+  // per load (including reloading the same file) and not on unrelated
+  // state changes like render/color mode.
+  useEffect(() => {
+    if (viewer.modelKind !== 'pdb' || !viewer.modelInfo) return
+    setHintVisible(true)
+    const timer = setTimeout(() => setHintVisible(false), 10000)
+    return () => clearTimeout(timer)
+  }, [viewer.modelInfo, viewer.modelKind])
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -88,6 +100,8 @@ function App() {
           onBackgroundChange={viewer.setBackground}
           showHelpers={viewer.showHelpers}
           onShowHelpersChange={viewer.toggleHelpers}
+          showCaption={viewer.showCaption}
+          onShowCaptionChange={viewer.setShowCaption}
           onFile={loadFile}
           onLoadSample={loadSampleUrl}
           onLoadFromInput={loadFromInput}
@@ -132,7 +146,9 @@ function App() {
             }}
           />
 
-          {viewer.modelInfo?.kind === 'pdb' && (viewer.modelInfo.metadata.title || viewer.modelInfo.metadata.organism) && (
+          {viewer.showCaption &&
+            viewer.modelInfo?.kind === 'pdb' &&
+            (viewer.modelInfo.metadata.title || viewer.modelInfo.metadata.organism) && (
             <div className="viewport-caption">
               {viewer.modelInfo.metadata.title && <div className="viewport-caption__title">{viewer.modelInfo.metadata.title}</div>}
               {viewer.modelInfo.metadata.organism && (
@@ -181,7 +197,7 @@ function App() {
             </div>
           )}
 
-          {viewer.modelKind === 'pdb' && !viewer.selectedAtom && (
+          {viewer.modelKind === 'pdb' && !viewer.selectedAtom && hintVisible && (
             <div className="viewport-hint">원자를 클릭하면 정보가 표시됩니다</div>
           )}
 

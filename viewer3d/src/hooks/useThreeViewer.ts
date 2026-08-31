@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { SceneManager, type Background } from '../viewer/SceneManager'
-import { CrossSectionController, defaultAxisState, type Axis, type AxisState } from '../viewer/crossSection'
+import { CrossSectionController, defaultAxisState, type Axis, type AxisState, type CapSource } from '../viewer/crossSection'
 import {
   loadPDBFromText,
   fetchPDBById,
@@ -20,6 +20,18 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof TypeError
 }
 
+/**
+ * Which meshes should count toward the solid cross-section cap for a given
+ * PDB render mode. Ball-and-stick includes the bond cylinders too, so a cut
+ * atom-to-atom bond reads as solid rather than punching a round hole through
+ * it. Cartoon ribbons aren't closed solids, so they get plane clipping only.
+ */
+function pdbCapSources(model: PDBModel, mode: PDBRenderMode): CapSource[] | null {
+  if (mode === 'ball-stick') return [model.atomMesh, model.bondMesh]
+  if (mode === 'spacefill') return [model.atomMesh]
+  return null
+}
+
 export function useThreeViewer() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const sceneRef = useRef<SceneManager | null>(null)
@@ -28,6 +40,7 @@ export function useThreeViewer() {
   const pdbModelRef = useRef<PDBModel | null>(null)
   const stlModelRef = useRef<STLModel | null>(null)
   const axisStateRef = useRef<Record<Axis, AxisState>>(defaultAxisState())
+  const radiusRef = useRef(1)
 
   const [ready, setReady] = useState(false)
   const [modelKind, setModelKind] = useState<ModelKind>(null)
@@ -41,6 +54,7 @@ export function useThreeViewer() {
   const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
   const [showHelpers, setShowHelpers] = useState(true)
+  const [showCaption, setShowCaption] = useState(true)
   const [searchResults, setSearchResults] = useState<PDBSearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selectedAtom, setSelectedAtom] = useState<AtomDetail | null>(null)
@@ -94,7 +108,7 @@ export function useThreeViewer() {
   }, [])
 
   const installModel = useCallback(
-    (object: THREE.Object3D, box: THREE.Box3, materials: THREE.Material[], capGeometry: THREE.BufferGeometry | null) => {
+    (object: THREE.Object3D, box: THREE.Box3, materials: THREE.Material[], capSources: CapSource | CapSource[] | null) => {
       const manager = sceneRef.current
       if (!manager) return
       setSelectedAtom(null)
@@ -110,11 +124,8 @@ export function useThreeViewer() {
       manager.scene.add(cs.helperGroup)
 
       const radius = box.getBoundingSphere(new THREE.Sphere()).radius
-      if (capGeometry) {
-        cs.attachGeometry(capGeometry, radius)
-      } else {
-        cs.setRadius(radius)
-      }
+      radiusRef.current = radius
+      cs.attachGeometry(capSources, radius)
 
       const resetAxis = defaultAxisState()
       cs.applyTo(materials, resetAxis)
@@ -143,7 +154,7 @@ export function useThreeViewer() {
         const materials = model.group.children
           .filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
           .map((c) => c.material as THREE.Material)
-        installModel(model.group, model.box, materials, null)
+        installModel(model.group, model.box, materials, pdbCapSources(model, renderMode))
         setModelKind('pdb')
         setModelInfo({
           kind: 'pdb',
@@ -193,7 +204,7 @@ export function useThreeViewer() {
         pdbModelRef.current = null
         if (wireframe) (model.mesh.material as THREE.MeshStandardMaterial).wireframe = true
         const box = new THREE.Box3().setFromObject(model.mesh)
-        installModel(model.mesh, box, [model.mesh.material as THREE.Material], model.mesh.geometry)
+        installModel(model.mesh, box, [model.mesh.material as THREE.Material], model.mesh)
         setModelKind('stl')
         setModelInfo({
           kind: 'stl',
@@ -323,10 +334,21 @@ export function useThreeViewer() {
     [applyClipping],
   )
 
-  const setRenderMode = useCallback((mode: PDBRenderMode) => {
-    setRenderModeState(mode)
-    pdbModelRef.current?.setRenderMode(mode)
-  }, [])
+  const setRenderMode = useCallback(
+    (mode: PDBRenderMode) => {
+      setRenderModeState(mode)
+      const model = pdbModelRef.current
+      if (!model) return
+      model.setRenderMode(mode)
+      // Ball-and-stick vs. spacefill draw a different solid (bonds included
+      // or not), so the cross-section cap has to be rebuilt for the new
+      // mode -- otherwise a mode switch keeps capping whatever solid was
+      // loaded first while clipping planes silently apply to the new one.
+      crossSectionRef.current?.attachGeometry(pdbCapSources(model, mode), radiusRef.current)
+      applyClipping(materialsRef.current, axisStateRef.current)
+    },
+    [applyClipping],
+  )
 
   const setColorMode = useCallback((mode: PDBColorMode) => {
     setColorModeState(mode)
@@ -402,6 +424,8 @@ export function useThreeViewer() {
     setBackground,
     showHelpers,
     toggleHelpers,
+    showCaption,
+    setShowCaption,
     loadFile,
     loadFromInput,
     loadSampleUrl,

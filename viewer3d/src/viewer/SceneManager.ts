@@ -115,14 +115,29 @@ export class SceneManager {
     }
   }
 
-  /** Picks the InstancedMesh instance under a client (viewport) coordinate, or null if none hit. */
-  pickInstance(clientX: number, clientY: number, mesh: THREE.InstancedMesh): number | null {
+  /**
+   * Picks the nearest hit instance across several InstancedMeshes under a
+   * client (viewport) coordinate -- e.g. atom spheres and bond cylinders,
+   * which can visually overlap, so the closer surface to the camera should
+   * win rather than always preferring one mesh over the other. Skips
+   * invisible meshes (e.g. bonds in spacefill mode, where they're never
+   * meant to be pickable). Returns null if nothing was hit.
+   */
+  pickNearest(clientX: number, clientY: number, meshes: THREE.InstancedMesh[]): { mesh: THREE.InstancedMesh; instanceId: number } | null {
     const rect = this.renderer.domElement.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return null
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
     this.raycaster.setFromCamera(ndc, this.camera)
-    const hit = this.raycaster.intersectObject(mesh)[0]
-    return hit?.instanceId ?? null
+
+    let best: { mesh: THREE.InstancedMesh; instanceId: number; distance: number } | null = null
+    for (const mesh of meshes) {
+      if (!mesh.visible) continue
+      const hit = this.raycaster.intersectObject(mesh)[0]
+      if (hit && hit.instanceId !== undefined && (!best || hit.distance < best.distance)) {
+        best = { mesh, instanceId: hit.instanceId, distance: hit.distance }
+      }
+    }
+    return best ? { mesh: best.mesh, instanceId: best.instanceId } : null
   }
 
   setAutoRotate(enabled: boolean) {

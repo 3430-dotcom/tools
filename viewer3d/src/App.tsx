@@ -139,10 +139,10 @@ function App() {
             onPointerUp={(e) => {
               const down = pointerDownPos.current
               pointerDownPos.current = null
-              // Only treat this as an atom pick if the pointer barely moved --
-              // otherwise every orbit-drag would also try to select an atom.
+              // Only treat this as a pick if the pointer barely moved --
+              // otherwise every orbit-drag would also try to select something.
               if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
-                viewer.pickAtom(e.clientX, e.clientY)
+                viewer.pickTarget(e.clientX, e.clientY)
               }
             }}
           />
@@ -158,8 +158,8 @@ function App() {
             </div>
           )}
 
-          {viewer.selectedAtom && (
-            <AtomAnnotation atom={viewer.selectedAtom} getScreenPosition={viewer.getScreenPosition} onClose={viewer.clearSelectedAtom} />
+          {viewer.selection && (
+            <AtomAnnotation selection={viewer.selection} getScreenPosition={viewer.getScreenPosition} onClose={viewer.clearSelection} />
           )}
 
           {!viewer.modelKind && !viewer.status && (
@@ -177,8 +177,8 @@ function App() {
             </div>
           )}
 
-          {viewer.modelKind === 'pdb' && !viewer.selectedAtom && hintVisible && (
-            <div className="viewport-hint">원자를 클릭하면 정보가 표시됩니다</div>
+          {viewer.modelKind === 'pdb' && !viewer.selection && hintVisible && (
+            <div className="viewport-hint">원자나 결합을 클릭하면 정보가 표시됩니다</div>
           )}
 
           {viewer.status && <div className="status-toast">{viewer.status}</div>}

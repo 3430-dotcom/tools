@@ -612,6 +612,13 @@
   padding: 14px 16px;
   backdrop-filter: blur(8px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.atom-annotation:active {
+  cursor: grabbing;
 }
 
 .atom-annotation__close {

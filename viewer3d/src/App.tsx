@@ -17,6 +17,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [hintVisible, setHintVisible] = useState(false)
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
+  const draggingPlane = useRef(false)
 
   // Show the "click an atom" hint only briefly right after a model loads --
   // modelInfo gets a fresh object on every load, so this effect re-fires
@@ -135,8 +136,23 @@ function App() {
             ref={viewer.containerRef}
             onPointerDown={(e) => {
               pointerDownPos.current = { x: e.clientX, y: e.clientY }
+              // Grabbing a cut plane's own handle takes over this gesture
+              // entirely -- orbiting is disabled for the duration (see
+              // startPlaneDrag) and the click-vs-drag pick logic below is
+              // skipped so an atom/bond doesn't also get picked underneath.
+              draggingPlane.current = viewer.startPlaneDrag(e.clientX, e.clientY)
+              if (draggingPlane.current) e.currentTarget.setPointerCapture(e.pointerId)
+            }}
+            onPointerMove={(e) => {
+              if (draggingPlane.current) viewer.updatePlaneDrag(e.clientX, e.clientY)
             }}
             onPointerUp={(e) => {
+              if (draggingPlane.current) {
+                draggingPlane.current = false
+                pointerDownPos.current = null
+                viewer.endPlaneDrag()
+                return
+              }
               const down = pointerDownPos.current
               pointerDownPos.current = null
               // Only treat this as a pick if the pointer barely moved --
@@ -144,6 +160,13 @@ function App() {
               if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
                 viewer.pickTarget(e.clientX, e.clientY)
               }
+            }}
+            onPointerCancel={() => {
+              if (draggingPlane.current) {
+                draggingPlane.current = false
+                viewer.endPlaneDrag()
+              }
+              pointerDownPos.current = null
             }}
           />
 

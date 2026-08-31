@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { SceneManager, type Background } from '../viewer/SceneManager'
-import { CrossSectionController, defaultAxisState, type Axis, type AxisState, type CapSource } from '../viewer/crossSection'
+import { CrossSectionController, defaultAxisState, AXES, AXIS_NORMALS, type Axis, type AxisState, type CapSource } from '../viewer/crossSection'
 import {
   loadPDBFromText,
   fetchPDBById,
   searchPDB,
+  BOND_COLOR_HEX,
   type AtomDetail,
   type PDBColorMode,
   type PDBModel,
@@ -42,14 +43,18 @@ export interface SelectedBondInfo {
 export type Selection = SelectedAtomInfo | SelectedBondInfo
 
 /**
- * Which meshes should count toward the solid cross-section cap for a given
- * PDB render mode. Ball-and-stick includes the bond cylinders too, so a cut
- * atom-to-atom bond reads as solid rather than punching a round hole through
- * it. Cartoon ribbons aren't closed solids, so they get plane clipping only.
+ * Which meshes should count toward the generic (flat, single-color) stencil
+ * cap for a given PDB render mode. Atoms are deliberately excluded here --
+ * PDBModel.updateAtomCaps builds an exact, per-atom-colored disc cap for
+ * them instead, so a cut spacefill/ball-stick model reads as each atom's
+ * own color rather than one flat accent color smeared across all of them.
+ * Bonds still use the generic flat cap (colored to match the bond's own
+ * gray, see BOND_COLOR_HEX) since a cut bond's cross-section is a small
+ * ellipse we don't compute exactly. Cartoon ribbons aren't closed solids,
+ * so they get plane clipping only.
  */
 function pdbCapSources(model: PDBModel, mode: PDBRenderMode): CapSource[] | null {
-  if (mode === 'ball-stick') return [model.atomMesh, model.bondMesh]
-  if (mode === 'spacefill') return [model.atomMesh]
+  if (mode === 'ball-stick') return [model.bondMesh]
   return null
 }
 
@@ -62,6 +67,13 @@ export function useThreeViewer() {
   const stlModelRef = useRef<STLModel | null>(null)
   const axisStateRef = useRef<Record<Axis, AxisState>>(defaultAxisState())
   const radiusRef = useRef(1)
+  const planeDragRef = useRef<{
+    axis: Axis
+    startOffset: number
+    startMouse: { x: number; y: number }
+    screenAxisDir: { x: number; y: number }
+    pixelsPerWorldUnit: number
+  } | null>(null)
 
   const [ready, setReady] = useState(false)
   const [modelKind, setModelKind] = useState<ModelKind>(null)
@@ -129,7 +141,13 @@ export function useThreeViewer() {
   }, [])
 
   const installModel = useCallback(
-    (object: THREE.Object3D, box: THREE.Box3, materials: THREE.Material[], capSources: CapSource | CapSource[] | null) => {
+    (
+      object: THREE.Object3D,
+      box: THREE.Box3,
+      materials: THREE.Material[],
+      capSources: CapSource | CapSource[] | null,
+      capColor?: THREE.ColorRepresentation,
+    ) => {
       const manager = sceneRef.current
       if (!manager) return
       setSelection(null)
@@ -146,7 +164,7 @@ export function useThreeViewer() {
 
       const radius = box.getBoundingSphere(new THREE.Sphere()).radius
       radiusRef.current = radius
-      cs.attachGeometry(capSources, radius)
+      cs.attachGeometry(capSources, radius, capColor)
 
       const resetAxis = defaultAxisState()
       cs.applyTo(materials, resetAxis)
@@ -175,7 +193,8 @@ export function useThreeViewer() {
         const materials = model.group.children
           .filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
           .map((c) => c.material as THREE.Material)
-        installModel(model.group, model.box, materials, pdbCapSources(model, renderMode))
+        installModel(model.group, model.box, materials, pdbCapSources(model, renderMode), BOND_COLOR_HEX)
+        if (crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
         setModelKind('pdb')
         setModelInfo({
           kind: 'pdb',
@@ -225,7 +244,7 @@ export function useThreeViewer() {
         pdbModelRef.current = null
         if (wireframe) (model.mesh.material as THREE.MeshStandardMaterial).wireframe = true
         const box = new THREE.Box3().setFromObject(model.mesh)
-        installModel(model.mesh, box, [model.mesh.material as THREE.Material], model.mesh)
+        installModel(model.mesh, box, [model.mesh.material as THREE.Material], model.mesh, (model.mesh.material as THREE.MeshStandardMaterial).color)
         setModelKind('stl')
         setModelInfo({
           kind: 'stl',
@@ -351,6 +370,9 @@ export function useThreeViewer() {
       axisStateRef.current = next
       setAxisStateState(next)
       applyClipping(materialsRef.current, next)
+      // Only this axis's discs can have changed -- recomputing all three on
+      // every slider tick would be wasted work on large models.
+      if (crossSectionRef.current) pdbModelRef.current?.updateAtomCaps(crossSectionRef.current.planes, next, axis)
     },
     [applyClipping],
   )
@@ -365,8 +387,11 @@ export function useThreeViewer() {
       // or not), so the cross-section cap has to be rebuilt for the new
       // mode -- otherwise a mode switch keeps capping whatever solid was
       // loaded first while clipping planes silently apply to the new one.
-      crossSectionRef.current?.attachGeometry(pdbCapSources(model, mode), radiusRef.current)
+      crossSectionRef.current?.attachGeometry(pdbCapSources(model, mode), radiusRef.current, BOND_COLOR_HEX)
       applyClipping(materialsRef.current, axisStateRef.current)
+      // Atom radius depends on render mode (spacefill vs. ball-and-stick),
+      // which changes where the plane intersects each atom's sphere.
+      if (crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
       // Cartoon ribbon materials never receive clipping planes (see
       // pdbCapSources), so the cut guide planes would float there doing
       // nothing -- keep them hidden while in cartoon mode regardless of the
@@ -386,7 +411,11 @@ export function useThreeViewer() {
 
   const setColorMode = useCallback((mode: PDBColorMode) => {
     setColorModeState(mode)
-    pdbModelRef.current?.setColorMode(mode)
+    const model = pdbModelRef.current
+    model?.setColorMode(mode)
+    // The disc caps' colors are read from each atom's current display
+    // color, which just changed.
+    if (model && crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
   }, [])
 
   const setWireframe = useCallback((value: boolean) => {
@@ -480,6 +509,86 @@ export function useThreeViewer() {
   /** Projects a world-space point (e.g. the selected atom's position) to viewport-relative pixel coordinates. */
   const getScreenPosition = useCallback((pos: THREE.Vector3) => sceneRef.current?.projectToScreen(pos) ?? null, [])
 
+  /**
+   * If this viewport coordinate hits one of the currently-enabled axes' cut
+   * planes, starts dragging that plane's offset and returns true (so the
+   * caller can skip its usual click/orbit handling for this gesture).
+   *
+   * The drag itself works by comparing screen-space movement against how
+   * far, in pixels, moving the plane by one full world unit along its own
+   * normal would move it on screen at the current camera angle/zoom --
+   * i.e. it projects two reference points (the plane's current position and
+   * one unit further along its normal) to get a pixel-per-world-unit scale
+   * and a 2D screen direction, then every subsequent mouse position is
+   * projected onto that 2D direction to get how far along the plane's own
+   * axis the mouse has moved. This tracks correctly regardless of viewing
+   * angle, without needing a full 3D ray/ray closest-point solve.
+   */
+  const startPlaneDrag = useCallback((clientX: number, clientY: number): boolean => {
+    const manager = sceneRef.current
+    const cs = crossSectionRef.current
+    if (!manager || !cs) return false
+
+    const state = axisStateRef.current
+    const enabledAxes = AXES.filter((a) => state[a].enabled)
+    if (enabledAxes.length === 0) return false
+
+    const hitObj = manager.pickObject(
+      clientX,
+      clientY,
+      enabledAxes.map((a) => cs.dragHandles[a]),
+    )
+    if (!hitObj) return false
+    const axis = enabledAxes.find((a) => cs.dragHandles[a] === hitObj)
+    if (!axis) return false
+
+    const radius = radiusRef.current
+    const moveDir = AXIS_NORMALS[axis].clone().negate()
+    const startOffset = state[axis].offset
+    const basePoint = moveDir.clone().multiplyScalar(startOffset * radius)
+    const refPoint = basePoint.clone().addScaledVector(moveDir, radius)
+    const p0 = manager.projectToScreen(basePoint)
+    const p1 = manager.projectToScreen(refPoint)
+    if (!p0 || !p1) return false
+
+    const dx = p1.x - p0.x
+    const dy = p1.y - p0.y
+    const screenDist = Math.hypot(dx, dy)
+    // Looking nearly straight down this axis -- moving it can't visibly
+    // project onto the screen, so a drag couldn't track it meaningfully.
+    if (screenDist < 1e-3) return false
+
+    planeDragRef.current = {
+      axis,
+      startOffset,
+      startMouse: { x: clientX, y: clientY },
+      screenAxisDir: { x: dx / screenDist, y: dy / screenDist },
+      pixelsPerWorldUnit: screenDist / radius,
+    }
+    manager.controls.enabled = false
+    return true
+  }, [])
+
+  const updatePlaneDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      const drag = planeDragRef.current
+      if (!drag) return
+      const dx = clientX - drag.startMouse.x
+      const dy = clientY - drag.startMouse.y
+      const alongAxisPixels = dx * drag.screenAxisDir.x + dy * drag.screenAxisDir.y
+      const deltaOffset = alongAxisPixels / drag.pixelsPerWorldUnit / radiusRef.current
+      const newOffset = Math.min(1, Math.max(-1, drag.startOffset + deltaOffset))
+      setAxis(drag.axis, { offset: newOffset })
+    },
+    [setAxis],
+  )
+
+  const endPlaneDrag = useCallback(() => {
+    if (!planeDragRef.current) return
+    planeDragRef.current = null
+    if (sceneRef.current) sceneRef.current.controls.enabled = true
+  }, [])
+
   return {
     containerRef,
     ready,
@@ -513,6 +622,9 @@ export function useThreeViewer() {
     pickTarget,
     clearSelection,
     getScreenPosition,
+    startPlaneDrag,
+    updatePlaneDrag,
+    endPlaneDrag,
     resetView,
     screenshot,
   }

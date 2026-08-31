@@ -9,13 +9,13 @@ export interface AxisState {
   offset: number
 }
 
-const AXIS_NORMALS: Record<Axis, THREE.Vector3> = {
+export const AXIS_NORMALS: Record<Axis, THREE.Vector3> = {
   x: new THREE.Vector3(-1, 0, 0),
   y: new THREE.Vector3(0, -1, 0),
   z: new THREE.Vector3(0, 0, -1),
 }
 
-const AXES: Axis[] = ['x', 'y', 'z']
+export const AXES: Axis[] = ['x', 'y', 'z']
 
 /**
  * A renderable whose closed surface(s) should count toward the cross-section
@@ -39,6 +39,16 @@ export class CrossSectionController {
   readonly planes: Record<Axis, THREE.Plane>
   readonly planeHelpers: Record<Axis, THREE.PlaneHelper>
   readonly helperGroup = new THREE.Group()
+  /**
+   * Invisible (opacity 0) planes that track each axis's cut plane, existing
+   * purely as a raycast target so the viewport can support grabbing and
+   * dragging a cut plane directly instead of only via the sidebar slider.
+   * Kept separate from the visible cap meshes (capGroup) since those aren't
+   * rebuilt/present for every render mode (e.g. spacefill has no flat cap
+   * at all now -- see PDBModel.updateAtomCaps) while the plane itself is
+   * always draggable whenever its axis is enabled.
+   */
+  readonly dragHandles: Record<Axis, THREE.Mesh>
   private stencilRoot = new THREE.Group()
   private capGroup = new THREE.Group()
   private capMaterials: THREE.MeshStandardMaterial[] = []
@@ -57,9 +67,18 @@ export class CrossSectionController {
       y: new THREE.PlaneHelper(this.planes.y, 2, 0x4dff88),
       z: new THREE.PlaneHelper(this.planes.z, 2, 0x4d9dff),
     }
+    this.dragHandles = {} as Record<Axis, THREE.Mesh>
     for (const axis of AXES) {
       this.planeHelpers[axis].visible = false
       this.helperGroup.add(this.planeHelpers[axis])
+
+      const handle = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false, side: THREE.DoubleSide }),
+      )
+      handle.visible = false
+      this.dragHandles[axis] = handle
+      this.helperGroup.add(handle)
     }
     this.group.add(this.stencilRoot, this.capGroup)
   }
@@ -76,6 +95,7 @@ export class CrossSectionController {
     const helperSize = this.radius * 3
     for (const axis of AXES) {
       this.planeHelpers[axis].size = helperSize
+      this.dragHandles[axis].scale.setScalar(this.radius * 4)
     }
   }
 
@@ -85,7 +105,7 @@ export class CrossSectionController {
    * current render mode). Pass `null`/`[]` to keep plane clipping without a
    * solid cap (e.g. the cartoon ribbon, which isn't a closed solid).
    */
-  attachGeometry(sources: CapSource | CapSource[] | null, boundingRadius: number) {
+  attachGeometry(sources: CapSource | CapSource[] | null, boundingRadius: number, capColor: THREE.ColorRepresentation = 0xe91e63) {
     this.clearStencil()
     this.setRadius(boundingRadius)
     const list = sources ? (Array.isArray(sources) ? sources : [sources]) : []
@@ -97,7 +117,7 @@ export class CrossSectionController {
       this.stencilRoot.add(createPlaneStencilGroup(list, plane, AXES.indexOf(axis) + 1))
 
       const capMat = new THREE.MeshStandardMaterial({
-        color: 0xe91e63,
+        color: capColor,
         metalness: 0.1,
         roughness: 0.7,
         side: THREE.DoubleSide,
@@ -134,6 +154,8 @@ export class CrossSectionController {
       plane.normal.copy(AXIS_NORMALS[axis]).multiplyScalar(sign)
       plane.constant = s.offset * this.radius * sign
       this.planeHelpers[axis].visible = s.enabled
+      alignCapToPlane(this.dragHandles[axis], plane)
+      this.dragHandles[axis].visible = s.enabled
       if (s.enabled) active.push(plane)
     }
 

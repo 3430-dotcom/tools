@@ -536,7 +536,7 @@ export interface PDBSearchResult {
 /** RCSB's public per-entry structure thumbnail (biological assembly render), no API key needed. */
 export function rcsbThumbnailUrl(id: string): string {
   const lower = id.toLowerCase()
-  return `https://cdn.rcsb.org/images/structures/${lower}/${lower}_assembly-1.jpeg`
+  return `https://cdn.rcsb.org/images/structures/${lower}_assembly-1.jpeg`
 }
 
 /**

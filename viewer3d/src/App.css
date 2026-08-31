@@ -226,7 +226,62 @@
   border-color: #3b82f6;
 }
 
-.search-results-toggle {
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #2a3145;
+  background: #12151f;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.search-suggestions button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #c9cde0;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-suggestions button:hover {
+  background: #1b2030;
+}
+
+.search-suggestions__ko {
+  font-weight: 600;
+  color: #e8eaf0;
+}
+
+.search-suggestions__en {
+  color: #7dd3fc;
+  font-size: 11.5px;
+}
+
+/* Shared by the search-results header and the sample-group headers -- any
+   section whose content can be hidden to shorten the sidebar. */
+.collapsible-toggle {
   width: 100%;
   display: flex;
   align-items: center;
@@ -242,12 +297,12 @@
   cursor: pointer;
 }
 
-.search-results-toggle:hover {
+.collapsible-toggle:hover {
   border-color: #3b82f6;
   background: #171b28;
 }
 
-.search-results-toggle__chevron {
+.collapsible-toggle__chevron {
   color: #6f7690;
 }
 
@@ -316,13 +371,6 @@
 
 .sample-group + .sample-group {
   margin-top: 10px;
-}
-
-.sample-label {
-  display: block;
-  font-size: 11px;
-  color: #6f7690;
-  margin-bottom: 6px;
 }
 
 .chip-row {

@@ -220,17 +220,23 @@ export function Sidebar(props: SidebarProps) {
         </section>
       )}
 
-      <section className="panel">
-        <h2>단면 분석 (Cross-Section)</h2>
-        <p className="hint">축을 활성화하고 슬라이더로 절단면을 이동하세요.</p>
-        {AXES.map((axis) => (
-          <AxisSlider key={axis} axis={axis} state={props.axisState[axis]} onChange={(patch) => props.onAxisChange(axis, patch)} />
-        ))}
-        <label className="switch-row">
-          <input type="checkbox" checked={props.showHelpers} onChange={(e) => props.onShowHelpersChange(e.target.checked)} />
-          절단 평면 가이드 표시
-        </label>
-      </section>
+      {/* Cartoon ribbons aren't closed solids and never received clipping
+          planes to begin with (only the atom/bond InstancedMeshes do), so
+          the cross-section controls would silently do nothing here -- hide
+          them rather than expose a broken control. */}
+      {!(props.modelKind === 'pdb' && props.renderMode === 'cartoon') && (
+        <section className="panel">
+          <h2>단면 분석 (Cross-Section)</h2>
+          <p className="hint">축을 활성화하고 슬라이더로 절단면을 이동하세요.</p>
+          {AXES.map((axis) => (
+            <AxisSlider key={axis} axis={axis} state={props.axisState[axis]} onChange={(patch) => props.onAxisChange(axis, patch)} />
+          ))}
+          <label className="switch-row">
+            <input type="checkbox" checked={props.showHelpers} onChange={(e) => props.onShowHelpersChange(e.target.checked)} />
+            절단 평면 가이드 표시
+          </label>
+        </section>
+      )}
 
       <section className="panel">
         <h2>뷰 옵션</h2>

@@ -346,6 +346,11 @@ export function useThreeViewer() {
       // loaded first while clipping planes silently apply to the new one.
       crossSectionRef.current?.attachGeometry(pdbCapSources(model, mode), radiusRef.current)
       applyClipping(materialsRef.current, axisStateRef.current)
+      // Cartoon ribbon materials never receive clipping planes (see
+      // pdbCapSources), so the cut guide planes would float there doing
+      // nothing -- keep them hidden while in cartoon mode regardless of the
+      // showHelpers setting, restoring on the next mode switch.
+      if (mode === 'cartoon') crossSectionRef.current?.setHelpersVisible(axisStateRef.current, false)
     },
     [applyClipping],
   )

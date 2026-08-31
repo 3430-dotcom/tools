@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AxisSlider } from './AxisSlider'
 import type { Axis, AxisState } from '../viewer/crossSection'
 import type { PDBColorMode, PDBRenderMode, PDBSearchResult } from '../viewer/pdb'
@@ -65,6 +65,14 @@ export function Sidebar(props: SidebarProps) {
   // entry) -- tracked so that one broken image cleanly falls back to the
   // text-only result instead of showing a broken-image icon.
   const [failedThumbnails, setFailedThumbnails] = useState<Set<string>>(new Set())
+  // Collapsible so a fresh set of results (each now with a thumbnail, so
+  // noticeably taller) doesn't dominate the sidebar. Re-expands whenever a
+  // new search actually returns results, since running a search implies
+  // wanting to see what came back.
+  const [resultsOpen, setResultsOpen] = useState(true)
+  useEffect(() => {
+    if (props.searchResults.length > 0) setResultsOpen(true)
+  }, [props.searchResults])
 
   return (
     <aside className={`sidebar ${props.className ?? ''}`}>
@@ -120,27 +128,40 @@ export function Sidebar(props: SidebarProps) {
           영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다.
         </p>
         {props.searchResults.length > 0 && (
-          <ul className="search-results">
-            {props.searchResults.map((r) => (
-              <li key={r.id}>
-                <button className="search-result" onClick={() => props.onLoadFromInput(r.id)}>
-                  {!failedThumbnails.has(r.id) && (
-                    <img
-                      className="search-result__thumb"
-                      src={r.thumbnailUrl}
-                      alt=""
-                      loading="lazy"
-                      onError={() => setFailedThumbnails((prev) => new Set(prev).add(r.id))}
-                    />
-                  )}
-                  <div className="search-result__text">
-                    <span className="search-result__id">{r.id}</span>
-                    <span className="search-result__title">{r.title}</span>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <button
+              type="button"
+              className="search-results-toggle"
+              onClick={() => setResultsOpen((v) => !v)}
+              aria-expanded={resultsOpen}
+            >
+              <span>검색 결과 {props.searchResults.length}개</span>
+              <span className="search-results-toggle__chevron">{resultsOpen ? '▾' : '▸'}</span>
+            </button>
+            {resultsOpen && (
+              <ul className="search-results">
+                {props.searchResults.map((r) => (
+                  <li key={r.id}>
+                    <button className="search-result" onClick={() => props.onLoadFromInput(r.id)}>
+                      {!failedThumbnails.has(r.id) && (
+                        <img
+                          className="search-result__thumb"
+                          src={r.thumbnailUrl}
+                          alt=""
+                          loading="lazy"
+                          onError={() => setFailedThumbnails((prev) => new Set(prev).add(r.id))}
+                        />
+                      )}
+                      <div className="search-result__text">
+                        <span className="search-result__id">{r.id}</span>
+                        <span className="search-result__title">{r.title}</span>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
 
         <div className="sample-group">

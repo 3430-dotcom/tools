@@ -96,6 +96,25 @@ export class SceneManager {
     this.scene.background = new THREE.Color(mode === 'dark' ? 0x11141c : 0xeef1f7)
   }
 
+  /**
+   * Projects a world-space point to pixel coordinates relative to the
+   * canvas's own container (matching the coordinate space that the
+   * absolutely-positioned viewport overlays use). Returns null when the
+   * container has no size yet; `visible` is false once the point is behind
+   * the camera or beyond the far plane, so callers can fade a label out
+   * instead of leaving it stuck at a stale/garbage position.
+   */
+  projectToScreen(worldPos: THREE.Vector3): { x: number; y: number; visible: boolean } | null {
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return null
+    const ndc = worldPos.clone().project(this.camera)
+    return {
+      x: (ndc.x * 0.5 + 0.5) * rect.width,
+      y: (-ndc.y * 0.5 + 0.5) * rect.height,
+      visible: ndc.z < 1,
+    }
+  }
+
   /** Picks the InstancedMesh instance under a client (viewport) coordinate, or null if none hit. */
   pickInstance(clientX: number, clientY: number, mesh: THREE.InstancedMesh): number | null {
     const rect = this.renderer.domElement.getBoundingClientRect()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import { useThreeViewer } from './hooks/useThreeViewer'
 import { Sidebar } from './components/Sidebar'
+import { AtomAnnotation } from './components/AtomAnnotation'
 
 function download(dataUrl: string, filename: string) {
   const a = document.createElement('a')
@@ -158,28 +159,7 @@ function App() {
           )}
 
           {viewer.selectedAtom && (
-            <div className="atom-info-card">
-              <button className="atom-info-card__close" onClick={viewer.clearSelectedAtom} aria-label="닫기">
-                ✕
-              </button>
-              <div className="atom-info-card__element">{viewer.selectedAtom.element}</div>
-              <ul className="atom-info-card__detail">
-                <li>
-                  <span>원자</span>
-                  <strong>{viewer.selectedAtom.atomName || '-'}</strong>
-                </li>
-                <li>
-                  <span>잔기</span>
-                  <strong>
-                    {viewer.selectedAtom.resName} {viewer.selectedAtom.resSeq}
-                  </strong>
-                </li>
-                <li>
-                  <span>사슬</span>
-                  <strong>{viewer.selectedAtom.chain}</strong>
-                </li>
-              </ul>
-            </div>
+            <AtomAnnotation atom={viewer.selectedAtom} getScreenPosition={viewer.getScreenPosition} onClose={viewer.clearSelectedAtom} />
           )}
 
           {!viewer.modelKind && !viewer.status && (

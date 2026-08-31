@@ -27,6 +27,68 @@ const STL_SAMPLES = [
 
 const AXES: Axis[] = ['x', 'y', 'z']
 
+/**
+ * A curated list of biomolecules students are likely to recognize by their
+ * Korean name but not know the English search term for -- RCSB's search is
+ * English-only (see the hint text below the search box), so typing the
+ * Korean name here surfaces the matching English term to search with
+ * instead of leaving the student stuck. Deliberately a static local list,
+ * not a live API suggestion, so this works with zero network dependency.
+ */
+const SEARCH_SUGGESTIONS = [
+  { ko: '헤모글로빈', en: 'hemoglobin' },
+  { ko: '미오글로빈', en: 'myoglobin' },
+  { ko: '인슐린', en: 'insulin' },
+  { ko: '라이소자임', en: 'lysozyme' },
+  { ko: '콜라겐', en: 'collagen' },
+  { ko: '케라틴', en: 'keratin' },
+  { ko: '액틴', en: 'actin' },
+  { ko: '미오신', en: 'myosin' },
+  { ko: 'DNA 중합효소', en: 'DNA polymerase' },
+  { ko: 'RNA 중합효소', en: 'RNA polymerase' },
+  { ko: 'ATP 합성효소', en: 'ATP synthase' },
+  { ko: '리보솜', en: 'ribosome' },
+  { ko: '항체', en: 'antibody' },
+  { ko: '면역글로불린', en: 'immunoglobulin' },
+  { ko: '카탈레이스', en: 'catalase' },
+  { ko: '시토크롬 c', en: 'cytochrome c' },
+  { ko: '트립신', en: 'trypsin' },
+  { ko: '펩신', en: 'pepsin' },
+  { ko: '아밀레이스', en: 'amylase' },
+  { ko: '혈청알부민', en: 'serum albumin' },
+  { ko: '튜불린', en: 'tubulin' },
+  { ko: '알코올 탈수소효소', en: 'alcohol dehydrogenase' },
+  { ko: '녹색형광단백질', en: 'green fluorescent protein' },
+  { ko: '케이신', en: 'casein' },
+  { ko: '페리틴', en: 'ferritin' },
+  { ko: '헥소키네이스', en: 'hexokinase' },
+  { ko: '리보뉴클레이스', en: 'ribonuclease' },
+  { ko: '스파이크 단백질', en: 'spike protein' },
+  { ko: 'ACE2 수용체', en: 'ACE2' },
+  { ko: 'p53 단백질', en: 'p53' },
+  { ko: '크리스퍼 카스9', en: 'CRISPR Cas9' },
+]
+
+const MAX_SUGGESTIONS = 6
+
+function matchingSuggestions(query: string) {
+  const trimmed = query.trim().toLowerCase()
+  if (!trimmed) return []
+  return SEARCH_SUGGESTIONS.filter((s) => s.ko.toLowerCase().includes(trimmed) || s.en.toLowerCase().includes(trimmed)).slice(
+    0,
+    MAX_SUGGESTIONS,
+  )
+}
+
+/** Hover text for a search result: title, experimental method, and which render modes it supports (best-effort -- see PDBSearchResult.hasProtein). */
+function resultTooltip(r: PDBSearchResult): string {
+  const lines = [r.title]
+  if (r.method) lines.push(`실험 방법: ${r.method}`)
+  if (r.hasProtein === true) lines.push('지원 모드: Cartoon, Ball & Stick, Spacefill')
+  else if (r.hasProtein === false) lines.push('지원 모드: Ball & Stick, Spacefill (단백질 골격이 없어 Cartoon 불가)')
+  return lines.join('\n')
+}
+
 interface SidebarProps {
   className?: string
   modelKind: ModelKind
@@ -73,6 +135,15 @@ export function Sidebar(props: SidebarProps) {
   useEffect(() => {
     if (props.searchResults.length > 0) setResultsOpen(true)
   }, [props.searchResults])
+  const [pdbSamplesOpen, setPdbSamplesOpen] = useState(true)
+  const [stlSamplesOpen, setStlSamplesOpen] = useState(true)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const suggestions = matchingSuggestions(searchQuery)
+
+  const runSearch = (query: string) => {
+    setShowSuggestions(false)
+    props.onSearch(query)
+  }
 
   return (
     <aside className={`sidebar ${props.className ?? ''}`}>
@@ -112,37 +183,64 @@ export function Sidebar(props: SidebarProps) {
         </p>
 
         <div className="pdb-id-row">
-          <input
-            className="text-input"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && props.onSearch(searchQuery)}
-            placeholder="영문으로 검색, 예: hemoglobin"
-          />
-          <button className="btn" onClick={() => props.onSearch(searchQuery)} disabled={props.searching}>
+          <div className="search-input-wrap">
+            <input
+              className="text-input"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setShowSuggestions(true)
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setShowSuggestions(false)}
+              onKeyDown={(e) => e.key === 'Enter' && runSearch(searchQuery)}
+              placeholder="영문으로 검색, 예: hemoglobin"
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="search-suggestions">
+                {suggestions.map((s) => (
+                  <li key={s.en}>
+                    {/* onMouseDown (not onClick) fires before the input's onBlur closes this list. */}
+                    <button
+                      type="button"
+                      onMouseDown={() => {
+                        setSearchQuery(s.en)
+                        runSearch(s.en)
+                      }}
+                    >
+                      <span className="search-suggestions__ko">{s.ko}</span>
+                      <span className="search-suggestions__en">{s.en}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button className="btn" onClick={() => runSearch(searchQuery)} disabled={props.searching}>
             {props.searching ? '검색 중…' : '검색'}
           </button>
         </div>
         <p className="hint">
           단백질/분자의 <strong>영문 이름</strong>으로 검색하세요 (예: hemoglobin, insulin, alcohol dehydrogenase). RCSB는
-          영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다.
+          영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다. 한글로 입력하면 아는 이름의 영문 검색어를
+          추천해드려요.
         </p>
         {props.searchResults.length > 0 && (
           <>
             <button
               type="button"
-              className="search-results-toggle"
+              className="collapsible-toggle"
               onClick={() => setResultsOpen((v) => !v)}
               aria-expanded={resultsOpen}
             >
               <span>검색 결과 {props.searchResults.length}개</span>
-              <span className="search-results-toggle__chevron">{resultsOpen ? '▾' : '▸'}</span>
+              <span className="collapsible-toggle__chevron">{resultsOpen ? '▾' : '▸'}</span>
             </button>
             {resultsOpen && (
               <ul className="search-results">
                 {props.searchResults.map((r) => (
                   <li key={r.id}>
-                    <button className="search-result" onClick={() => props.onLoadFromInput(r.id)}>
+                    <button className="search-result" onClick={() => props.onLoadFromInput(r.id)} title={resultTooltip(r)}>
                       {!failedThumbnails.has(r.id) && (
                         <img
                           className="search-result__thumb"
@@ -165,24 +263,44 @@ export function Sidebar(props: SidebarProps) {
         )}
 
         <div className="sample-group">
-          <span className="sample-label">단백질 샘플</span>
-          <div className="chip-row">
-            {PDB_SAMPLES.map((s) => (
-              <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb')}>
-                {s.label}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            className="collapsible-toggle"
+            onClick={() => setPdbSamplesOpen((v) => !v)}
+            aria-expanded={pdbSamplesOpen}
+          >
+            <span>단백질 샘플</span>
+            <span className="collapsible-toggle__chevron">{pdbSamplesOpen ? '▾' : '▸'}</span>
+          </button>
+          {pdbSamplesOpen && (
+            <div className="chip-row">
+              {PDB_SAMPLES.map((s) => (
+                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb')}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="sample-group">
-          <span className="sample-label">3D 프린팅 샘플</span>
-          <div className="chip-row">
-            {STL_SAMPLES.map((s) => (
-              <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'stl')}>
-                {s.label}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            className="collapsible-toggle"
+            onClick={() => setStlSamplesOpen((v) => !v)}
+            aria-expanded={stlSamplesOpen}
+          >
+            <span>3D 프린팅 샘플</span>
+            <span className="collapsible-toggle__chevron">{stlSamplesOpen ? '▾' : '▸'}</span>
+          </button>
+          {stlSamplesOpen && (
+            <div className="chip-row">
+              {STL_SAMPLES.map((s) => (
+                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'stl')}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

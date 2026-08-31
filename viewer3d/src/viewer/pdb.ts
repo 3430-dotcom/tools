@@ -531,6 +531,16 @@ export interface PDBSearchResult {
   title: string
   /** RCSB's public structure-thumbnail image for this entry -- a quick visual match cue students recognize faster than a 4-character ID. */
   thumbnailUrl: string
+  /** Experimental method (e.g. "X-RAY DIFFRACTION"), or null if RCSB didn't return one. */
+  method: string | null
+  /**
+   * Whether this entry has protein content, best-effort from the same
+   * summary fetch used for the title (no extra request). Cartoon mode needs
+   * a protein backbone; ball-and-stick/spacefill work regardless. Null when
+   * RCSB's response didn't include a recognizable composition field --
+   * callers should treat that as "unknown," not "no."
+   */
+  hasProtein: boolean | null
 }
 
 /** RCSB's public per-entry structure thumbnail (biological assembly render), no API key needed. */
@@ -583,10 +593,21 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
     ids.map(async (id): Promise<PDBSearchResult> => {
       try {
         const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
-        const entry = (await entryRes.json()) as { struct?: { title?: string } }
-        return { id, title: entry.struct?.title ?? id, thumbnailUrl: rcsbThumbnailUrl(id) }
+        const entry = (await entryRes.json()) as {
+          struct?: { title?: string }
+          exptl?: { method?: string }[]
+          rcsb_entry_info?: { selected_polymer_entity_types?: string; polymer_composition?: string }
+        }
+        const polymerTypes = entry.rcsb_entry_info?.selected_polymer_entity_types ?? entry.rcsb_entry_info?.polymer_composition ?? null
+        return {
+          id,
+          title: entry.struct?.title ?? id,
+          thumbnailUrl: rcsbThumbnailUrl(id),
+          method: entry.exptl?.[0]?.method ?? null,
+          hasProtein: polymerTypes ? polymerTypes.toLowerCase().includes('protein') : null,
+        }
       } catch {
-        return { id, title: id, thumbnailUrl: rcsbThumbnailUrl(id) }
+        return { id, title: id, thumbnailUrl: rcsbThumbnailUrl(id), method: null, hasProtein: null }
       }
     }),
   )

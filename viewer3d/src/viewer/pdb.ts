@@ -241,7 +241,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
           m.compose(positions[i], q.identity(), s.set(0, 0, 0))
         }
         mesh.setMatrixAt(i, m)
-        mesh.setColorAt(i, atomDisplayColor(i, currentColorMode))
+        mesh.setColorAt(i, highlightedAtoms.includes(i) ? ATOM_HIGHLIGHT_COLOR : atomDisplayColor(i, currentColorMode))
       }
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true

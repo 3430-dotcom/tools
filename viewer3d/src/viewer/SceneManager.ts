@@ -143,10 +143,11 @@ export class SceneManager {
   /**
    * Raycasts a plain (non-instanced) object list -- e.g. the cross-section
    * plane drag handles -- and returns whichever is hit closest to the
-   * camera, or null. Invisible objects are naturally skipped by three.js's
-   * own raycast traversal.
+   * camera (with its distance, so callers can compare it against a
+   * competing hit elsewhere), or null. Invisible objects are naturally
+   * skipped by three.js's own raycast traversal.
    */
-  pickObject(clientX: number, clientY: number, objects: THREE.Object3D[]): THREE.Object3D | null {
+  pickObject(clientX: number, clientY: number, objects: THREE.Object3D[]): { object: THREE.Object3D; distance: number } | null {
     const rect = this.renderer.domElement.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return null
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
@@ -157,7 +158,30 @@ export class SceneManager {
       const hit = this.raycaster.intersectObject(obj, false)[0]
       if (hit && (!best || hit.distance < best.distance)) best = { object: obj, distance: hit.distance }
     }
-    return best?.object ?? null
+    return best
+  }
+
+  /**
+   * The nearest raycast hit distance among the given objects, or null if
+   * none hit. Used to compare "is the model surface itself closer than the
+   * (invisible) cut-plane handle under the pointer" -- a cut atom's own
+   * geometry always extends past the plane toward the camera even though
+   * clipping hides that part visually, so this reliably tells picking an
+   * atom/bond/STL surface apart from grabbing the plane wherever they
+   * visually coincide (i.e. right at the cut face).
+   */
+  nearestHitDistance(clientX: number, clientY: number, objects: THREE.Object3D[]): number | null {
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return null
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    this.raycaster.setFromCamera(ndc, this.camera)
+
+    let best: number | null = null
+    for (const obj of objects) {
+      const hit = this.raycaster.intersectObject(obj)[0]
+      if (hit && (best === null || hit.distance < best)) best = hit.distance
+    }
+    return best
   }
 
   setAutoRotate(enabled: boolean) {

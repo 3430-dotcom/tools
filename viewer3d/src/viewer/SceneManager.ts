@@ -140,6 +140,26 @@ export class SceneManager {
     return best ? { mesh: best.mesh, instanceId: best.instanceId } : null
   }
 
+  /**
+   * Raycasts a plain (non-instanced) object list -- e.g. the cross-section
+   * plane drag handles -- and returns whichever is hit closest to the
+   * camera, or null. Invisible objects are naturally skipped by three.js's
+   * own raycast traversal.
+   */
+  pickObject(clientX: number, clientY: number, objects: THREE.Object3D[]): THREE.Object3D | null {
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return null
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    this.raycaster.setFromCamera(ndc, this.camera)
+
+    let best: { object: THREE.Object3D; distance: number } | null = null
+    for (const obj of objects) {
+      const hit = this.raycaster.intersectObject(obj, false)[0]
+      if (hit && (!best || hit.distance < best.distance)) best = { object: obj, distance: hit.distance }
+    }
+    return best?.object ?? null
+  }
+
   setAutoRotate(enabled: boolean) {
     this.controls.autoRotate = enabled
   }

@@ -32,6 +32,20 @@ export function AtomAnnotation({ selection, getScreenPosition, onClose }: Props)
   const labelRef = useRef<HTMLDivElement | null>(null)
   const lineRef = useRef<SVGLineElement | null>(null)
 
+  // Offset (in px, relative to the atom's own screen position) the label is
+  // currently drawn at. Auto-computed every frame (radially away from
+  // viewport center) until the user drags the card, at which point the drag
+  // takes over as the source of truth; either way this ref always holds the
+  // last *rendered* offset, which a new drag starts from. Resets to
+  // auto-placement whenever a new atom/bond is picked.
+  const offsetRef = useRef({ x: 0, y: 0 })
+  const manualOffsetRef = useRef<{ x: number; y: number } | null>(null)
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(null)
+
+  useEffect(() => {
+    manualOffsetRef.current = null
+  }, [selection])
+
   useEffect(() => {
     let frameId = 0
 
@@ -48,19 +62,30 @@ export function AtomAnnotation({ selection, getScreenPosition, onClose }: Props)
           line.style.opacity = '0'
         } else {
           const container = dot.parentElement
-          const cx = container ? container.clientWidth / 2 : screen.x
-          const cy = container ? container.clientHeight / 2 : screen.y
-          const dx = screen.x - cx
-          const dy = screen.y - cy
-          const centerDist = Math.hypot(dx, dy)
-          const dir = centerDist < CENTER_DEAD_ZONE ? FALLBACK_DIR : { x: dx / centerDist, y: dy / centerDist }
+          let ox: number
+          let oy: number
+          if (manualOffsetRef.current) {
+            ox = manualOffsetRef.current.x
+            oy = manualOffsetRef.current.y
+          } else {
+            const cx = container ? container.clientWidth / 2 : screen.x
+            const cy = container ? container.clientHeight / 2 : screen.y
+            const dx = screen.x - cx
+            const dy = screen.y - cy
+            const centerDist = Math.hypot(dx, dy)
+            const dir = centerDist < CENTER_DEAD_ZONE ? FALLBACK_DIR : { x: dx / centerDist, y: dy / centerDist }
+            ox = dir.x * OFFSET_DISTANCE
+            oy = dir.y * OFFSET_DISTANCE
+          }
 
-          let lx = screen.x + dir.x * OFFSET_DISTANCE
-          let ly = screen.y + dir.y * OFFSET_DISTANCE
+          let lx = screen.x + ox
+          let ly = screen.y + oy
           if (container) {
             lx = Math.min(Math.max(lx, EDGE_MARGIN), container.clientWidth - label.offsetWidth - EDGE_MARGIN)
             ly = Math.min(Math.max(ly, EDGE_MARGIN), container.clientHeight - label.offsetHeight - EDGE_MARGIN)
           }
+          offsetRef.current = { x: lx - screen.x, y: ly - screen.y }
+
           dot.style.opacity = '1'
           dot.style.transform = `translate(${screen.x}px, ${screen.y}px)`
           label.style.opacity = '1'
@@ -80,13 +105,34 @@ export function AtomAnnotation({ selection, getScreenPosition, onClose }: Props)
     return () => cancelAnimationFrame(frameId)
   }, [selection, getScreenPosition])
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('.atom-annotation__close')) return
+    labelRef.current?.setPointerCapture(e.pointerId)
+    dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, baseX: offsetRef.current.x, baseY: offsetRef.current.y }
+  }
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    manualOffsetRef.current = { x: drag.baseX + (e.clientX - drag.startX), y: drag.baseY + (e.clientY - drag.startY) }
+  }
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null
+  }
+
   return (
     <>
       <svg className="atom-annotation-lines" aria-hidden="true">
         <line ref={lineRef} className="atom-annotation__line" />
       </svg>
       <div className="atom-annotation__dot" ref={dotRef} />
-      <div className="atom-annotation" ref={labelRef}>
+      <div
+        className="atom-annotation"
+        ref={labelRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
         <button className="atom-annotation__close" onClick={onClose} aria-label="닫기">
           ✕
         </button>

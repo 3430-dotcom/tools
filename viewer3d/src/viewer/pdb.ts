@@ -2,6 +2,10 @@ import * as THREE from 'three'
 import { PDBLoader } from 'three/examples/jsm/loaders/PDBLoader.js'
 import { elementRadius } from './colors'
 import { buildCartoonGroup, CARTOON_COLORS, type SSClass } from './cartoon'
+import { AXES, type Axis, type AxisState } from './crossSection'
+
+/** The ball-and-stick bond color, exported so the cross-section cap over a cut bond can match it instead of a mismatched flat color. */
+export const BOND_COLOR_HEX = 0xaaaaaa
 
 export type PDBRenderMode = 'ball-stick' | 'spacefill' | 'cartoon'
 export type PDBColorMode = 'element' | 'structure'
@@ -46,6 +50,14 @@ export interface PDBModel {
   setSelectedBond: (index: number | null) => void
   /** Bond instance indices attached to a given atom, for callers that need it independent of the highlight. */
   bondsForAtom: (index: number) => number[]
+  /**
+   * (Re)builds the exact per-atom cross-section cap discs -- one flat colored
+   * circle per atom whose sphere the cutting plane intersects, colored to
+   * match that atom's own current display color, rather than one flat color
+   * across every atom. Pass `onlyAxis` to only recompute one axis's discs
+   * (e.g. while dragging that axis's slider) instead of all three.
+   */
+  updateAtomCaps: (planes: Record<Axis, THREE.Plane>, state: Record<Axis, AxisState>, onlyAxis?: Axis) => void
 }
 
 const loader = new PDBLoader()
@@ -53,10 +65,12 @@ const loader = new PDBLoader()
 const sphereGeometry = new THREE.SphereGeometry(1, 20, 16)
 const cylinderGeometry = new THREE.CylinderGeometry(1, 1, 1, 10)
 cylinderGeometry.translate(0, 0.5, 0)
+const discGeometry = new THREE.CircleGeometry(1, 24)
 
 const BOND_RADIUS = 0.12
 const BALL_STICK_ATOM_SCALE = 0.28
 const UP = new THREE.Vector3(0, 1, 0)
+const UNIT_Z = new THREE.Vector3(0, 0, 1)
 
 export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'spacefill'): Promise<PDBModel> {
   const pdb = loader.parse(text)
@@ -139,7 +153,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const color = new THREE.Color()
 
   const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0x22e3ff)
-  const BOND_DEFAULT_COLOR = new THREE.Color(0xaaaaaa)
+  const BOND_DEFAULT_COLOR = new THREE.Color(BOND_COLOR_HEX)
   const BOND_HIGHLIGHT_COLOR = new THREE.Color(0xffc93f)
 
   function atomDisplayColor(i: number, currentColorMode: PDBColorMode): THREE.Color {
@@ -185,6 +199,53 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       if (bondPairs[i][0] === index || bondPairs[i][1] === index) result.push(i)
     }
     return result
+  }
+
+  // Exact per-atom cross-section caps: one disc InstancedMesh per axis, each
+  // with one instance per atom. An atom whose sphere the plane doesn't touch
+  // gets a zero-scale instance (cheap way to "hide" one instance without
+  // touching the others or the draw call count). Colored per-instance from
+  // that atom's own current display color, so the cut face reads as the
+  // model's real coloring instead of one flat accent color.
+  const capDiscGroup = new THREE.Group()
+  capDiscGroup.name = 'pdb-atom-caps'
+  const capDiscMeshes = {} as Record<Axis, THREE.InstancedMesh>
+  for (const axis of AXES) {
+    const mesh = new THREE.InstancedMesh(discGeometry, new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide }), atomCount)
+    mesh.name = `pdb-atom-cap-${axis}`
+    mesh.visible = false
+    mesh.frustumCulled = false
+    capDiscGroup.add(mesh)
+    capDiscMeshes[axis] = mesh
+  }
+
+  const capCenter = new THREE.Vector3()
+
+  function updateAtomCapsFn(planes: Record<Axis, THREE.Plane>, state: Record<Axis, AxisState>, onlyAxis?: Axis) {
+    for (const axis of onlyAxis ? [onlyAxis] : AXES) {
+      const mesh = capDiscMeshes[axis]
+      const axisState = state[axis]
+      mesh.visible = axisState.enabled && currentRenderMode !== 'cartoon'
+      if (!mesh.visible) continue
+
+      const plane = planes[axis]
+      for (let i = 0; i < atomCount; i++) {
+        const r = currentRenderMode === 'spacefill' ? radii[i] : radii[i] * BALL_STICK_ATOM_SCALE
+        const signedDist = plane.distanceToPoint(positions[i])
+        if (Math.abs(signedDist) < r) {
+          const discR = Math.sqrt(r * r - signedDist * signedDist)
+          capCenter.copy(positions[i]).addScaledVector(plane.normal, -signedDist)
+          q.setFromUnitVectors(UNIT_Z, plane.normal)
+          m.compose(capCenter, q, s.set(discR, discR, discR))
+        } else {
+          m.compose(positions[i], q.identity(), s.set(0, 0, 0))
+        }
+        mesh.setMatrixAt(i, m)
+        mesh.setColorAt(i, atomDisplayColor(i, currentColorMode))
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    }
   }
 
   // A selection can originate from either an atom click (highlighting the
@@ -241,7 +302,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   applyMode(currentRenderMode)
 
   const group = new THREE.Group()
-  group.add(atomMesh, bondMesh, cartoonGroup)
+  group.add(atomMesh, bondMesh, cartoonGroup, capDiscGroup)
   group.name = 'pdb-model'
 
   const localBox = new THREE.Box3().setFromObject(group)
@@ -272,6 +333,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     setSelectedAtom: setSelectedAtomFn,
     setSelectedBond: setSelectedBondFn,
     bondsForAtom: bondsForAtomFn,
+    updateAtomCaps: updateAtomCapsFn,
   }
 }
 

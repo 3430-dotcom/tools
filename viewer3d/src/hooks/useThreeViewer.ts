@@ -20,6 +20,13 @@ function isNetworkError(e: unknown): boolean {
   return e instanceof TypeError
 }
 
+/** The atom-click info shown as a viewport annotation: AtomDetail plus what's needed to anchor/describe it in-scene. */
+export interface SelectedAtomInfo extends AtomDetail {
+  index: number
+  position: THREE.Vector3
+  bondCount: number
+}
+
 /**
  * Which meshes should count toward the solid cross-section cap for a given
  * PDB render mode. Ball-and-stick includes the bond cylinders too, so a cut
@@ -57,7 +64,7 @@ export function useThreeViewer() {
   const [showCaption, setShowCaption] = useState(true)
   const [searchResults, setSearchResults] = useState<PDBSearchResult[]>([])
   const [searching, setSearching] = useState(false)
-  const [selectedAtom, setSelectedAtom] = useState<AtomDetail | null>(null)
+  const [selectedAtom, setSelectedAtom] = useState<SelectedAtomInfo | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -351,6 +358,13 @@ export function useThreeViewer() {
       // nothing -- keep them hidden while in cartoon mode regardless of the
       // showHelpers setting, restoring on the next mode switch.
       if (mode === 'cartoon') crossSectionRef.current?.setHelpersVisible(axisStateRef.current, false)
+      // Atoms aren't rendered in cartoon mode, so a lingering selection would
+      // leave the annotation pointing at an invisible atom. Safe to call
+      // unconditionally -- a no-op if nothing was selected.
+      if (mode === 'cartoon') {
+        model.setSelectedAtom(null)
+        setSelectedAtom(null)
+      }
     },
     [applyClipping],
   )
@@ -403,10 +417,21 @@ export function useThreeViewer() {
     const model = pdbModelRef.current
     if (!manager || !model) return
     const index = manager.pickInstance(clientX, clientY, model.atomMesh)
-    setSelectedAtom(index !== null ? model.atomDetails[index] : null)
+    model.setSelectedAtom(index)
+    setSelectedAtom(
+      index !== null
+        ? { ...model.atomDetails[index], index, position: model.positions[index].clone(), bondCount: model.bondsForAtom(index).length }
+        : null,
+    )
   }, [])
 
-  const clearSelectedAtom = useCallback(() => setSelectedAtom(null), [])
+  const clearSelectedAtom = useCallback(() => {
+    pdbModelRef.current?.setSelectedAtom(null)
+    setSelectedAtom(null)
+  }, [])
+
+  /** Projects a world-space point (e.g. the selected atom's position) to viewport-relative pixel coordinates. */
+  const getScreenPosition = useCallback((pos: THREE.Vector3) => sceneRef.current?.projectToScreen(pos) ?? null, [])
 
   return {
     containerRef,
@@ -440,6 +465,7 @@ export function useThreeViewer() {
     selectedAtom,
     pickAtom,
     clearSelectedAtom,
+    getScreenPosition,
     resetView,
     screenshot,
   }

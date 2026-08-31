@@ -31,11 +31,17 @@ export interface PDBModel {
   bondCount: number
   elementCounts: Record<string, number>
   atomDetails: AtomDetail[]
+  /** Local-space (group-relative) atom positions, in the same order as atomDetails/instance indices. */
+  positions: THREE.Vector3[]
   metadata: PDBMetadata
   hasCartoon: boolean
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
   setColorMode: (mode: PDBColorMode) => void
+  /** Highlights an atom (and the bonds attached to it) in-place, or clears the highlight when passed null. */
+  setSelectedAtom: (index: number | null) => void
+  /** Bond instance indices attached to a given atom, for callers that need it independent of the highlight. */
+  bondsForAtom: (index: number) => number[]
 }
 
 const loader = new PDBLoader()
@@ -95,6 +101,8 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
 
   const atomMesh = new THREE.InstancedMesh(
     sphereGeometry,
+    // Base material color must stay white -- instance colors (setColorAt)
+    // multiply into it, so anything less than white would tint every atom.
     new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.05 }),
     atomCount,
   )
@@ -105,27 +113,18 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   // from a chemical dictionary. Our loader has no such dictionary, so when
   // CONECT data is too sparse to be useful, fall back to distance-based
   // covalent bond perception instead of rendering a disconnected atom cloud.
+  //
+  // Bonds are tracked as atom index pairs (not raw positions) so a selected
+  // atom can look up which bond instances touch it, for highlighting.
   const conectPos = geometryBonds.getAttribute('position')
   const conectBondCount = conectPos ? conectPos.count / 2 : 0
-  const bondPairs: [THREE.Vector3, THREE.Vector3][] =
-    conectBondCount >= atomCount * 0.5
-      ? Array.from({ length: conectBondCount }, (_, i) => [
-          new THREE.Vector3(
-            conectPos.getX(i * 2) - center.x,
-            conectPos.getY(i * 2) - center.y,
-            conectPos.getZ(i * 2) - center.z,
-          ),
-          new THREE.Vector3(
-            conectPos.getX(i * 2 + 1) - center.x,
-            conectPos.getY(i * 2 + 1) - center.y,
-            conectPos.getZ(i * 2 + 1) - center.z,
-          ),
-        ])
-      : inferBondsByDistance(positions, radii)
+  const bondPairs: [number, number][] =
+    conectBondCount >= atomCount * 0.5 ? resolveConectBondIndices(conectPos, conectBondCount, positions, center) : inferBondsByDistance(positions, radii)
 
   const bondMesh = new THREE.InstancedMesh(
     cylinderGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5, metalness: 0.05 }),
+    // Base material color must stay white for the same instance-color reason as atomMesh.
+    new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 }),
     Math.max(bondPairs.length, 1),
   )
   bondMesh.name = 'pdb-bonds'
@@ -135,17 +134,21 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const s = new THREE.Vector3()
   const color = new THREE.Color()
 
+  const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0x22e3ff)
+  const BOND_DEFAULT_COLOR = new THREE.Color(0xaaaaaa)
+  const BOND_HIGHLIGHT_COLOR = new THREE.Color(0xffc93f)
+
+  function atomDisplayColor(i: number, currentColorMode: PDBColorMode): THREE.Color {
+    if (currentColorMode === 'structure') return color.copy(CARTOON_COLORS[ssClass[i]])
+    return color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
+  }
+
   function applyAtoms(currentMode: PDBRenderMode, currentColorMode: PDBColorMode) {
     for (let i = 0; i < atomCount; i++) {
       const scale = currentMode === 'spacefill' ? radii[i] : radii[i] * BALL_STICK_ATOM_SCALE
       m.compose(positions[i], q.identity(), s.set(scale, scale, scale))
       atomMesh.setMatrixAt(i, m)
-      if (currentColorMode === 'structure') {
-        color.copy(CARTOON_COLORS[ssClass[i]])
-      } else {
-        color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
-      }
-      atomMesh.setColorAt(i, color)
+      atomMesh.setColorAt(i, i === highlightedAtom ? ATOM_HIGHLIGHT_COLOR : atomDisplayColor(i, currentColorMode))
     }
     atomMesh.instanceMatrix.needsUpdate = true
     if (atomMesh.instanceColor) atomMesh.instanceColor.needsUpdate = true
@@ -156,7 +159,9 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     bondMesh.visible = currentMode === 'ball-stick' && bondPairs.length > 0
     if (!bondMesh.visible) return
     for (let i = 0; i < bondPairs.length; i++) {
-      const [start, end] = bondPairs[i]
+      const [a, b] = bondPairs[i]
+      const start = positions[a]
+      const end = positions[b]
       const mid = start.clone().add(end).multiplyScalar(0.5)
       const dir = end.clone().sub(start)
       const length = dir.length() || 0.0001
@@ -164,8 +169,40 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       q.setFromUnitVectors(UP, dir)
       m.compose(mid, q, s.set(BOND_RADIUS, length, BOND_RADIUS))
       bondMesh.setMatrixAt(i, m)
+      bondMesh.setColorAt(i, highlightedBonds.includes(i) ? BOND_HIGHLIGHT_COLOR : BOND_DEFAULT_COLOR)
     }
     bondMesh.instanceMatrix.needsUpdate = true
+    if (bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate = true
+  }
+
+  function bondsForAtomFn(index: number): number[] {
+    const result: number[] = []
+    for (let i = 0; i < bondPairs.length; i++) {
+      if (bondPairs[i][0] === index || bondPairs[i][1] === index) result.push(i)
+    }
+    return result
+  }
+
+  let highlightedAtom: number | null = null
+  let highlightedBonds: number[] = []
+
+  /** Re-tints just the previous/next highlighted atom + its bonds, without touching everything else. */
+  function setSelectedAtomFn(index: number | null) {
+    if (highlightedAtom !== null) {
+      atomMesh.setColorAt(highlightedAtom, atomDisplayColor(highlightedAtom, currentColorMode))
+    }
+    for (const bi of highlightedBonds) bondMesh.setColorAt(bi, BOND_DEFAULT_COLOR)
+
+    highlightedAtom = index
+    highlightedBonds = index !== null ? bondsForAtomFn(index) : []
+
+    if (index !== null) {
+      atomMesh.setColorAt(index, ATOM_HIGHLIGHT_COLOR)
+      for (const bi of highlightedBonds) bondMesh.setColorAt(bi, BOND_HIGHLIGHT_COLOR)
+    }
+
+    if (atomMesh.instanceColor) atomMesh.instanceColor.needsUpdate = true
+    if (bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate = true
   }
 
   const cartoonGroup = buildCartoonGroup(positions, atomDetails, ssClass)
@@ -196,6 +233,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     bondCount: bondPairs.length,
     elementCounts,
     atomDetails,
+    positions,
     metadata,
     hasCartoon: cartoonGroup.children.length > 0,
     box: localBox,
@@ -209,6 +247,8 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       currentColorMode = newColorMode
       applyAtoms(currentRenderMode, currentColorMode)
     },
+    setSelectedAtom: setSelectedAtomFn,
+    bondsForAtom: bondsForAtomFn,
   }
 }
 
@@ -321,7 +361,7 @@ const MAX_BOND_LENGTH = 2.2
 const MIN_BOND_LENGTH = 0.35
 
 /** Grid-accelerated covalent bond perception: connects atoms within ~sum-of-covalent-radii. */
-function inferBondsByDistance(positions: THREE.Vector3[], radii: Float32Array): [THREE.Vector3, THREE.Vector3][] {
+function inferBondsByDistance(positions: THREE.Vector3[], radii: Float32Array): [number, number][] {
   const cellSize = MAX_BOND_LENGTH
   const cellOf = (v: THREE.Vector3): [number, number, number] => [
     Math.floor(v.x / cellSize),
@@ -339,7 +379,7 @@ function inferBondsByDistance(positions: THREE.Vector3[], radii: Float32Array): 
     else grid.set(k, [i])
   }
 
-  const pairs: [THREE.Vector3, THREE.Vector3][] = []
+  const pairs: [number, number][] = []
   for (let i = 0; i < positions.length; i++) {
     const [cx, cy, cz] = cellOf(positions[i])
     for (let dx = -1; dx <= 1; dx++) {
@@ -352,12 +392,42 @@ function inferBondsByDistance(positions: THREE.Vector3[], radii: Float32Array): 
             const dist = positions[i].distanceTo(positions[j])
             const cutoff = Math.min((radii[i] + radii[j]) * BOND_TOLERANCE, MAX_BOND_LENGTH)
             if (dist > MIN_BOND_LENGTH && dist <= cutoff) {
-              pairs.push([positions[i], positions[j]])
+              pairs.push([i, j])
             }
           }
         }
       }
     }
+  }
+  return pairs
+}
+
+/**
+ * CONECT records give bond endpoints as raw coordinates (already resolved
+ * by PDBLoader), not atom indices -- recover the index by matching each
+ * endpoint back to our own (equally centered) positions array. Coordinates
+ * come from parsing the same source text with the same float precision, so
+ * a tight rounding key is enough to resolve them exactly.
+ */
+function resolveConectBondIndices(
+  conectPos: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+  bondCount: number,
+  positions: THREE.Vector3[],
+  center: THREE.Vector3,
+): [number, number][] {
+  const key = (x: number, y: number, z: number) => `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`
+  const byPosition = new Map<string, number>()
+  for (let i = 0; i < positions.length; i++) {
+    byPosition.set(key(positions[i].x, positions[i].y, positions[i].z), i)
+  }
+
+  const pairs: [number, number][] = []
+  for (let i = 0; i < bondCount; i++) {
+    const a = byPosition.get(key(conectPos.getX(i * 2) - center.x, conectPos.getY(i * 2) - center.y, conectPos.getZ(i * 2) - center.z))
+    const b = byPosition.get(
+      key(conectPos.getX(i * 2 + 1) - center.x, conectPos.getY(i * 2 + 1) - center.y, conectPos.getZ(i * 2 + 1) - center.z),
+    )
+    if (a !== undefined && b !== undefined) pairs.push([a, b])
   }
   return pairs
 }

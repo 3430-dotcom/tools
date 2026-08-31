@@ -18,13 +18,6 @@ const PDB_SAMPLES = [
   { label: '풀러렌 (C60)', url: `${SAMPLE_BASE}buckyball.pdb` },
 ]
 
-const STL_SAMPLES = [
-  { label: '꽃병 (속이 빈 모형)', url: `${SAMPLE_BASE}vase.stl` },
-  { label: '기어 브래킷', url: `${SAMPLE_BASE}gear-bracket.stl` },
-  { label: '토러스 노트', url: `${SAMPLE_BASE}torus-knot.stl` },
-  { label: '도넛 토러스', url: `${SAMPLE_BASE}torus.stl` },
-]
-
 const AXES: Axis[] = ['x', 'y', 'z']
 
 /**
@@ -136,7 +129,6 @@ export function Sidebar(props: SidebarProps) {
     if (props.searchResults.length > 0) setResultsOpen(true)
   }, [props.searchResults])
   const [pdbSamplesOpen, setPdbSamplesOpen] = useState(true)
-  const [stlSamplesOpen, setStlSamplesOpen] = useState(true)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestions = matchingSuggestions(searchQuery)
 
@@ -276,26 +268,6 @@ export function Sidebar(props: SidebarProps) {
             <div className="chip-row">
               {PDB_SAMPLES.map((s) => (
                 <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb')}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="sample-group">
-          <button
-            type="button"
-            className="collapsible-toggle"
-            onClick={() => setStlSamplesOpen((v) => !v)}
-            aria-expanded={stlSamplesOpen}
-          >
-            <span>3D 프린팅 샘플</span>
-            <span className="collapsible-toggle__chevron">{stlSamplesOpen ? '▾' : '▸'}</span>
-          </button>
-          {stlSamplesOpen && (
-            <div className="chip-row">
-              {STL_SAMPLES.map((s) => (
-                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'stl')}>
                   {s.label}
                 </button>
               ))}

@@ -18,9 +18,22 @@ const AXIS_NORMALS: Record<Axis, THREE.Vector3> = {
 const AXES: Axis[] = ['x', 'y', 'z']
 
 /**
+ * A renderable whose closed surface(s) should count toward the cross-section
+ * cap: a plain solid Mesh (STL) or an InstancedMesh where every instance is
+ * itself a closed solid (PDB atom spheres / bond cylinders).
+ */
+export type CapSource = THREE.Mesh | THREE.InstancedMesh
+
+/**
  * Builds solid cross-section "caps" using the stencil-buffer technique so a
  * clipped solid mesh reads as a real cut surface instead of a hollow shell.
  * See three.js's webgl_clipping_stencil example for the underlying recipe.
+ *
+ * The even-odd stencil parity trick generalizes to a *union* of multiple
+ * overlapping closed solids -- not just one watertight mesh -- so the same
+ * code caps a single STL mesh as well as a whole InstancedMesh of PDB atom
+ * spheres (or atoms + bond cylinders together) without needing to boolean
+ * them into one geometry first.
  */
 export class CrossSectionController {
   readonly planes: Record<Axis, THREE.Plane>
@@ -66,15 +79,22 @@ export class CrossSectionController {
     }
   }
 
-  /** (Re)builds the stencil groups + cap planes for a given geometry (STL solids only). */
-  attachGeometry(geometry: THREE.BufferGeometry, boundingRadius: number) {
+  /**
+   * (Re)builds the stencil groups + cap planes for one or more solid sources
+   * (an STL mesh, or the PDB atom/bond InstancedMeshes relevant to the
+   * current render mode). Pass `null`/`[]` to keep plane clipping without a
+   * solid cap (e.g. the cartoon ribbon, which isn't a closed solid).
+   */
+  attachGeometry(sources: CapSource | CapSource[] | null, boundingRadius: number) {
     this.clearStencil()
     this.setRadius(boundingRadius)
+    const list = sources ? (Array.isArray(sources) ? sources : [sources]) : []
+    if (list.length === 0) return
     const planeSize = this.radius * 4
 
     for (const axis of AXES) {
       const plane = this.planes[axis]
-      this.stencilRoot.add(createPlaneStencilGroup(geometry, plane, AXES.indexOf(axis) + 1))
+      this.stencilRoot.add(createPlaneStencilGroup(list, plane, AXES.indexOf(axis) + 1))
 
       const capMat = new THREE.MeshStandardMaterial({
         color: 0xe91e63,
@@ -161,34 +181,54 @@ function alignCapToPlane(mesh: THREE.Mesh, plane: THREE.Plane) {
   mesh.lookAt(mesh.position.clone().add(normal))
 }
 
-function createPlaneStencilGroup(geometry: THREE.BufferGeometry, plane: THREE.Plane, renderOrder: number): THREE.Group {
+function makeStencilMaterial(side: THREE.Side, plane: THREE.Plane, op: THREE.StencilOp): THREE.MeshBasicMaterial {
+  const mat = new THREE.MeshBasicMaterial()
+  mat.depthWrite = false
+  mat.depthTest = false
+  mat.colorWrite = false
+  mat.stencilWrite = true
+  mat.stencilFunc = THREE.AlwaysStencilFunc
+  mat.side = side
+  mat.clippingPlanes = [plane]
+  mat.stencilFail = op
+  mat.stencilZFail = op
+  mat.stencilZPass = op
+  return mat
+}
+
+/** Clones a cap source for one stencil pass, sharing its geometry (and, for instances, its transforms) rather than copying them. */
+function cloneForStencil(source: CapSource, material: THREE.Material): THREE.Mesh | THREE.InstancedMesh {
+  if (source instanceof THREE.InstancedMesh) {
+    const clone = new THREE.InstancedMesh(source.geometry, material, source.count)
+    clone.instanceMatrix = source.instanceMatrix
+    clone.frustumCulled = false
+    return clone
+  }
+  const clone = new THREE.Mesh(source.geometry, material)
+  clone.frustumCulled = false
+  return clone
+}
+
+/**
+ * One plane's stencil pass across every source: each source contributes a
+ * back-face (increment) and front-face (decrement) sub-pass, so overlapping
+ * solids (e.g. atom spheres + bond cylinders) accumulate into a single
+ * even-odd parity that represents their union, not each solid separately.
+ */
+function createPlaneStencilGroup(sources: CapSource[], plane: THREE.Plane, renderOrder: number): THREE.Group {
   const group = new THREE.Group()
-  const baseMat = new THREE.MeshBasicMaterial()
-  baseMat.depthWrite = false
-  baseMat.depthTest = false
-  baseMat.colorWrite = false
-  baseMat.stencilWrite = true
-  baseMat.stencilFunc = THREE.AlwaysStencilFunc
+  const backMat = makeStencilMaterial(THREE.BackSide, plane, THREE.IncrementWrapStencilOp)
+  const frontMat = makeStencilMaterial(THREE.FrontSide, plane, THREE.DecrementWrapStencilOp)
 
-  const backMat = baseMat.clone()
-  backMat.side = THREE.BackSide
-  backMat.clippingPlanes = [plane]
-  backMat.stencilFail = THREE.IncrementWrapStencilOp
-  backMat.stencilZFail = THREE.IncrementWrapStencilOp
-  backMat.stencilZPass = THREE.IncrementWrapStencilOp
-  const backMesh = new THREE.Mesh(geometry, backMat)
-  backMesh.renderOrder = renderOrder
-  group.add(backMesh)
+  for (const source of sources) {
+    const backMesh = cloneForStencil(source, backMat)
+    backMesh.renderOrder = renderOrder
+    group.add(backMesh)
 
-  const frontMat = baseMat.clone()
-  frontMat.side = THREE.FrontSide
-  frontMat.clippingPlanes = [plane]
-  frontMat.stencilFail = THREE.DecrementWrapStencilOp
-  frontMat.stencilZFail = THREE.DecrementWrapStencilOp
-  frontMat.stencilZPass = THREE.DecrementWrapStencilOp
-  const frontMesh = new THREE.Mesh(geometry, frontMat)
-  frontMesh.renderOrder = renderOrder
-  group.add(frontMesh)
+    const frontMesh = cloneForStencil(source, frontMat)
+    frontMesh.renderOrder = renderOrder
+    group.add(frontMesh)
+  }
 
   return group
 }

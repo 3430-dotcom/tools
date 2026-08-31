@@ -26,6 +26,7 @@ export interface PDBMetadata {
 export interface PDBModel {
   group: THREE.Group
   atomMesh: THREE.InstancedMesh
+  bondMesh: THREE.InstancedMesh
   atomCount: number
   bondCount: number
   elementCounts: Record<string, number>
@@ -190,6 +191,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   return {
     group,
     atomMesh,
+    bondMesh,
     atomCount,
     bondCount: bondPairs.length,
     elementCounts,

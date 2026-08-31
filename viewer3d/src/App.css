@@ -226,6 +226,31 @@
   border-color: #3b82f6;
 }
 
+.search-results-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  border: 1px solid #212636;
+  background: #10131c;
+  color: #c9cde0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-results-toggle:hover {
+  border-color: #3b82f6;
+  background: #171b28;
+}
+
+.search-results-toggle__chevron {
+  color: #6f7690;
+}
+
 .search-results {
   list-style: none;
   margin: 0 0 12px;

@@ -33,6 +33,8 @@ export interface PDBModel {
   atomDetails: AtomDetail[]
   /** Local-space (group-relative) atom positions, in the same order as atomDetails/instance indices. */
   positions: THREE.Vector3[]
+  /** [atomIndexA, atomIndexB] per bond instance, in the same order as bondMesh's instances. */
+  bondAtomIndices: [number, number][]
   metadata: PDBMetadata
   hasCartoon: boolean
   box: THREE.Box3
@@ -40,6 +42,8 @@ export interface PDBModel {
   setColorMode: (mode: PDBColorMode) => void
   /** Highlights an atom (and the bonds attached to it) in-place, or clears the highlight when passed null. */
   setSelectedAtom: (index: number | null) => void
+  /** Highlights a bond (and its two endpoint atoms) in-place, or clears the highlight when passed null. */
+  setSelectedBond: (index: number | null) => void
   /** Bond instance indices attached to a given atom, for callers that need it independent of the highlight. */
   bondsForAtom: (index: number) => number[]
 }
@@ -148,7 +152,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       const scale = currentMode === 'spacefill' ? radii[i] : radii[i] * BALL_STICK_ATOM_SCALE
       m.compose(positions[i], q.identity(), s.set(scale, scale, scale))
       atomMesh.setMatrixAt(i, m)
-      atomMesh.setColorAt(i, i === highlightedAtom ? ATOM_HIGHLIGHT_COLOR : atomDisplayColor(i, currentColorMode))
+      atomMesh.setColorAt(i, highlightedAtoms.includes(i) ? ATOM_HIGHLIGHT_COLOR : atomDisplayColor(i, currentColorMode))
     }
     atomMesh.instanceMatrix.needsUpdate = true
     if (atomMesh.instanceColor) atomMesh.instanceColor.needsUpdate = true
@@ -183,26 +187,43 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     return result
   }
 
-  let highlightedAtom: number | null = null
+  // A selection can originate from either an atom click (highlighting the
+  // atom plus every bond touching it) or a bond click (highlighting the
+  // bond plus its two endpoint atoms) -- both just reduce to "these atom
+  // indices + these bond indices get tinted," so one pair of arrays and one
+  // apply/clear routine covers both origins.
+  let highlightedAtoms: number[] = []
   let highlightedBonds: number[] = []
 
-  /** Re-tints just the previous/next highlighted atom + its bonds, without touching everything else. */
-  function setSelectedAtomFn(index: number | null) {
-    if (highlightedAtom !== null) {
-      atomMesh.setColorAt(highlightedAtom, atomDisplayColor(highlightedAtom, currentColorMode))
-    }
+  function clearHighlight() {
+    for (const i of highlightedAtoms) atomMesh.setColorAt(i, atomDisplayColor(i, currentColorMode))
     for (const bi of highlightedBonds) bondMesh.setColorAt(bi, BOND_DEFAULT_COLOR)
+    highlightedAtoms = []
+    highlightedBonds = []
+  }
 
-    highlightedAtom = index
-    highlightedBonds = index !== null ? bondsForAtomFn(index) : []
+  function applyHighlight(atoms: number[], bonds: number[]) {
+    highlightedAtoms = atoms
+    highlightedBonds = bonds
+    for (const i of highlightedAtoms) atomMesh.setColorAt(i, ATOM_HIGHLIGHT_COLOR)
+    for (const bi of highlightedBonds) bondMesh.setColorAt(bi, BOND_HIGHLIGHT_COLOR)
+  }
 
-    if (index !== null) {
-      atomMesh.setColorAt(index, ATOM_HIGHLIGHT_COLOR)
-      for (const bi of highlightedBonds) bondMesh.setColorAt(bi, BOND_HIGHLIGHT_COLOR)
-    }
-
+  function finishHighlightUpdate() {
     if (atomMesh.instanceColor) atomMesh.instanceColor.needsUpdate = true
     if (bondMesh.instanceColor) bondMesh.instanceColor.needsUpdate = true
+  }
+
+  function setSelectedAtomFn(index: number | null) {
+    clearHighlight()
+    if (index !== null) applyHighlight([index], bondsForAtomFn(index))
+    finishHighlightUpdate()
+  }
+
+  function setSelectedBondFn(index: number | null) {
+    clearHighlight()
+    if (index !== null) applyHighlight([...bondPairs[index]], [index])
+    finishHighlightUpdate()
   }
 
   const cartoonGroup = buildCartoonGroup(positions, atomDetails, ssClass)
@@ -234,6 +255,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     elementCounts,
     atomDetails,
     positions,
+    bondAtomIndices: bondPairs,
     metadata,
     hasCartoon: cartoonGroup.children.length > 0,
     box: localBox,
@@ -248,6 +270,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       applyAtoms(currentRenderMode, currentColorMode)
     },
     setSelectedAtom: setSelectedAtomFn,
+    setSelectedBond: setSelectedBondFn,
     bondsForAtom: bondsForAtomFn,
   }
 }

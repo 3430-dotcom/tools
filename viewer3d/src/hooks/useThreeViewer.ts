@@ -22,10 +22,24 @@ function isNetworkError(e: unknown): boolean {
 
 /** The atom-click info shown as a viewport annotation: AtomDetail plus what's needed to anchor/describe it in-scene. */
 export interface SelectedAtomInfo extends AtomDetail {
+  kind: 'atom'
   index: number
   position: THREE.Vector3
   bondCount: number
 }
+
+/** The bond-click info shown as a viewport annotation: its two endpoint atoms plus its length, anchored at its midpoint. */
+export interface SelectedBondInfo {
+  kind: 'bond'
+  index: number
+  position: THREE.Vector3
+  /** Bond length in Angstroms (PDB coordinates are already in that unit). */
+  length: number
+  atomA: AtomDetail
+  atomB: AtomDetail
+}
+
+export type Selection = SelectedAtomInfo | SelectedBondInfo
 
 /**
  * Which meshes should count toward the solid cross-section cap for a given
@@ -64,7 +78,7 @@ export function useThreeViewer() {
   const [showCaption, setShowCaption] = useState(true)
   const [searchResults, setSearchResults] = useState<PDBSearchResult[]>([])
   const [searching, setSearching] = useState(false)
-  const [selectedAtom, setSelectedAtom] = useState<SelectedAtomInfo | null>(null)
+  const [selection, setSelection] = useState<Selection | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
@@ -118,7 +132,7 @@ export function useThreeViewer() {
     (object: THREE.Object3D, box: THREE.Box3, materials: THREE.Material[], capSources: CapSource | CapSource[] | null) => {
       const manager = sceneRef.current
       if (!manager) return
-      setSelectedAtom(null)
+      setSelection(null)
       if (crossSectionRef.current) {
         manager.scene.remove(crossSectionRef.current.helperGroup)
         crossSectionRef.current.dispose()
@@ -358,12 +372,13 @@ export function useThreeViewer() {
       // nothing -- keep them hidden while in cartoon mode regardless of the
       // showHelpers setting, restoring on the next mode switch.
       if (mode === 'cartoon') crossSectionRef.current?.setHelpersVisible(axisStateRef.current, false)
-      // Atoms aren't rendered in cartoon mode, so a lingering selection would
-      // leave the annotation pointing at an invisible atom. Safe to call
-      // unconditionally -- a no-op if nothing was selected.
+      // Atoms and bonds aren't rendered in cartoon mode, so a lingering
+      // selection would leave the annotation pointing at nothing visible.
+      // Safe to call unconditionally -- a no-op if nothing was selected.
       if (mode === 'cartoon') {
         model.setSelectedAtom(null)
-        setSelectedAtom(null)
+        model.setSelectedBond(null)
+        setSelection(null)
       }
     },
     [applyClipping],
@@ -412,22 +427,54 @@ export function useThreeViewer() {
 
   const screenshot = useCallback(() => sceneRef.current?.screenshot() ?? null, [])
 
-  const pickAtom = useCallback((clientX: number, clientY: number) => {
+  /** Picks whichever of an atom or a bond is closer to the camera under this viewport coordinate. */
+  const pickTarget = useCallback((clientX: number, clientY: number) => {
     const manager = sceneRef.current
     const model = pdbModelRef.current
     if (!manager || !model) return
-    const index = manager.pickInstance(clientX, clientY, model.atomMesh)
-    model.setSelectedAtom(index)
-    setSelectedAtom(
-      index !== null
-        ? { ...model.atomDetails[index], index, position: model.positions[index].clone(), bondCount: model.bondsForAtom(index).length }
-        : null,
-    )
+    const hit = manager.pickNearest(clientX, clientY, [model.atomMesh, model.bondMesh])
+
+    if (!hit) {
+      model.setSelectedAtom(null)
+      model.setSelectedBond(null)
+      setSelection(null)
+      return
+    }
+
+    if (hit.mesh === model.atomMesh) {
+      const index = hit.instanceId
+      model.setSelectedBond(null)
+      model.setSelectedAtom(index)
+      setSelection({
+        kind: 'atom',
+        ...model.atomDetails[index],
+        index,
+        position: model.positions[index].clone(),
+        bondCount: model.bondsForAtom(index).length,
+      })
+    } else {
+      const index = hit.instanceId
+      const [a, b] = model.bondAtomIndices[index]
+      const posA = model.positions[a]
+      const posB = model.positions[b]
+      model.setSelectedAtom(null)
+      model.setSelectedBond(index)
+      setSelection({
+        kind: 'bond',
+        index,
+        position: posA.clone().add(posB).multiplyScalar(0.5),
+        length: posA.distanceTo(posB),
+        atomA: model.atomDetails[a],
+        atomB: model.atomDetails[b],
+      })
+    }
   }, [])
 
-  const clearSelectedAtom = useCallback(() => {
-    pdbModelRef.current?.setSelectedAtom(null)
-    setSelectedAtom(null)
+  const clearSelection = useCallback(() => {
+    const model = pdbModelRef.current
+    model?.setSelectedAtom(null)
+    model?.setSelectedBond(null)
+    setSelection(null)
   }, [])
 
   /** Projects a world-space point (e.g. the selected atom's position) to viewport-relative pixel coordinates. */
@@ -462,9 +509,9 @@ export function useThreeViewer() {
     searchResults,
     searching,
     searchPDBByName,
-    selectedAtom,
-    pickAtom,
-    clearSelectedAtom,
+    selection,
+    pickTarget,
+    clearSelection,
     getScreenPosition,
     resetView,
     screenshot,

@@ -9,6 +9,8 @@ export interface PDBInfo {
   elementCounts: Record<string, number>
   metadata: PDBMetadata
   hasCartoon: boolean
+  /** Chain ID -> assigned color (hex number), for the "체인별" color mode's legend. */
+  chainColors: Record<string, number>
 }
 
 export interface STLInfo {
@@ -16,6 +18,8 @@ export interface STLInfo {
   triangleCount: number
   size: { x: number; y: number; z: number }
   volumeMm3: number
+  /** Whether this STL embedded its own per-facet color (a de-facto binary-STL extension) -- if so, the viewer shows that instead of the default material color. */
+  hasEmbeddedColor: boolean
 }
 
 export type ModelInfo = PDBInfo | STLInfo | null

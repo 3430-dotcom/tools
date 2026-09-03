@@ -3,12 +3,24 @@ import { PDBLoader } from 'three/examples/jsm/loaders/PDBLoader.js'
 import { elementRadius } from './colors'
 import { buildCartoonGroup, CARTOON_COLORS, type SSClass } from './cartoon'
 import { AXES, type Axis, type AxisState } from './crossSection'
+import { fetchWithTimeout } from './net'
 
 /** The ball-and-stick bond color, exported so the cross-section cap over a cut bond can match it instead of a mismatched flat color. */
 export const BOND_COLOR_HEX = 0xaaaaaa
 
 export type PDBRenderMode = 'ball-stick' | 'spacefill' | 'cartoon'
-export type PDBColorMode = 'element' | 'structure'
+export type PDBColorMode = 'element' | 'structure' | 'chain'
+
+/**
+ * A cycling palette for the "체인별" (by chain) color mode -- distinct
+ * enough to tell adjacent chains apart, reused (mod length) past 10
+ * chains, e.g. a large viral-capsid assembly with dozens of identical
+ * subunits. Roughly matches the "each subunit its own color" convention
+ * RCSB's own structure thumbnails use for multi-chain assemblies, which
+ * is the whole point -- students comparing the loaded model to the search
+ * thumbnail should see the same kind of coloring, not a uniform CPK blob.
+ */
+const CHAIN_COLOR_PALETTE = [0xff6b6b, 0x4dabf7, 0x51cf66, 0xffd43b, 0xcc5de8, 0xff922b, 0x20c997, 0xf06595, 0x748ffc, 0xa9e34b]
 
 export interface AtomDetail {
   element: string
@@ -41,6 +53,8 @@ export interface PDBModel {
   bondAtomIndices: [number, number][]
   metadata: PDBMetadata
   hasCartoon: boolean
+  /** Chain ID -> assigned color (hex number), for the "체인별" mode's legend. */
+  chainColors: Record<string, number>
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
   setColorMode: (mode: PDBColorMode) => void
@@ -95,6 +109,18 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const metadata = parsePDBMetadata(text)
   const ssRanges = parseSecondaryStructureRanges(text)
   const ssClass: SSClass[] = atomDetails.map((a) => classifySecondaryStructure(a, ssRanges))
+
+  // Order of first appearance (not sorted) so chain A/B/C in a typical file
+  // gets colors in the order a reader would encounter them.
+  const chainOrder: string[] = []
+  for (const a of atomDetails) if (!chainOrder.includes(a.chain)) chainOrder.push(a.chain)
+  const chainColorMap = new Map<string, THREE.Color>()
+  const chainColors: Record<string, number> = {}
+  chainOrder.forEach((chain, i) => {
+    const hex = CHAIN_COLOR_PALETTE[i % CHAIN_COLOR_PALETTE.length]
+    chainColorMap.set(chain, new THREE.Color(hex))
+    chainColors[chain] = hex
+  })
 
   geometryAtoms.computeBoundingBox()
   const box = geometryAtoms.boundingBox ?? new THREE.Box3()
@@ -155,9 +181,11 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0x22e3ff)
   const BOND_DEFAULT_COLOR = new THREE.Color(BOND_COLOR_HEX)
   const BOND_HIGHLIGHT_COLOR = new THREE.Color(0xffc93f)
+  const WHITE = new THREE.Color(0xffffff)
 
   function atomDisplayColor(i: number, currentColorMode: PDBColorMode): THREE.Color {
     if (currentColorMode === 'structure') return color.copy(CARTOON_COLORS[ssClass[i]])
+    if (currentColorMode === 'chain') return color.copy(chainColorMap.get(atomDetails[i].chain) ?? WHITE)
     return color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
   }
 
@@ -319,6 +347,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     bondAtomIndices: bondPairs,
     metadata,
     hasCartoon: cartoonGroup.children.length > 0,
+    chainColors,
     box: localBox,
     setRenderMode: (newMode: PDBRenderMode) => {
       currentRenderMode = newMode
@@ -519,7 +548,7 @@ function resolveConectBondIndices(
 
 export async function fetchPDBById(pdbId: string): Promise<string> {
   const id = pdbId.trim().toUpperCase()
-  const res = await fetch(`https://files.rcsb.org/download/${id}.pdb`)
+  const res = await fetchWithTimeout(`https://files.rcsb.org/download/${id}.pdb`)
   if (!res.ok) {
     throw new Error(`PDB ID "${id}"를 불러오지 못했습니다 (${res.status})`)
   }
@@ -569,7 +598,7 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
   }
   const searchUrl = `https://search.rcsb.org/rcsbsearch/v2/query?json=${encodeURIComponent(JSON.stringify(searchQuery))}`
 
-  const res = await fetch(searchUrl)
+  const res = await fetchWithTimeout(searchUrl)
   if (res.status === 204) return []
   if (!res.ok) {
     throw new Error(`검색에 실패했습니다 (${res.status})`)
@@ -592,7 +621,7 @@ export async function searchPDB(query: string): Promise<PDBSearchResult[]> {
   const results = await Promise.all(
     ids.map(async (id): Promise<PDBSearchResult> => {
       try {
-        const entryRes = await fetch(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
+        const entryRes = await fetchWithTimeout(`https://data.rcsb.org/rest/v1/core/entry/${id}`)
         const entry = (await entryRes.json()) as {
           struct?: { title?: string }
           exptl?: { method?: string }[]

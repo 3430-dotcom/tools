@@ -14,6 +14,7 @@ import {
   type PDBSearchResult,
 } from '../viewer/pdb'
 import { parseSTL, type STLModel } from '../viewer/stl'
+import { fetchWithTimeout } from '../viewer/net'
 import type { ModelInfo, ModelKind } from '../types'
 
 /** True for a raw browser fetch failure (CORS block, DNS, offline) as opposed to an app-thrown error with a real message. */
@@ -203,6 +204,7 @@ export function useThreeViewer() {
           elementCounts: model.elementCounts,
           metadata: model.metadata,
           hasCartoon: model.hasCartoon,
+          chainColors: model.chainColors,
         })
         setStatus(null)
       } catch (e) {
@@ -251,6 +253,7 @@ export function useThreeViewer() {
           triangleCount: model.triangleCount,
           size: { x: model.size.x, y: model.size.y, z: model.size.z },
           volumeMm3: model.volumeMm3,
+          hasEmbeddedColor: model.hasEmbeddedColor,
         })
         setStatus(null)
       } catch (e) {
@@ -282,7 +285,7 @@ export function useThreeViewer() {
       setError(null)
       setStatus('샘플 불러오는 중...')
       try {
-        const res = await fetch(url)
+        const res = await fetchWithTimeout(url)
         if (!res.ok) throw new Error(`샘플을 불러오지 못했습니다 (${res.status})`)
         if (kind === 'stl') {
           loadSTLBuffer(await res.arrayBuffer())
@@ -308,7 +311,7 @@ export function useThreeViewer() {
       setError(null)
       setStatus('URL에서 불러오는 중...')
       try {
-        const res = await fetch(url)
+        const res = await fetchWithTimeout(url)
         if (!res.ok) throw new Error(`파일을 불러오지 못했습니다 (${res.status})`)
         if (kind === 'stl') {
           loadSTLBuffer(await res.arrayBuffer())

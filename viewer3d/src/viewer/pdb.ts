@@ -29,6 +29,20 @@ export interface AtomDetail {
   resSeq: number
   chain: string
   isHetero: boolean
+  /**
+   * Which MODEL block (0-based) this atom came from. A biological-assembly
+   * file with more symmetry-generated copies than fit in the 1-character
+   * chain ID space reuses chain letters across separate MODEL blocks, so
+   * `chain` alone doesn't uniquely identify a physical copy -- pair it with
+   * this to group/color/trace each copy independently. Always 0 for a file
+   * with no MODEL records (the common case).
+   */
+  modelIndex: number
+}
+
+/** Groups/colors/traces a single physical chain copy uniquely, even when a biological-assembly file reuses the same 1-character chain letter across separate MODEL blocks. */
+function chainKey(a: AtomDetail): string {
+  return `${a.modelIndex}:${a.chain}`
 }
 
 export interface PDBMetadata {
@@ -111,15 +125,28 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const ssClass: SSClass[] = atomDetails.map((a) => classifySecondaryStructure(a, ssRanges))
 
   // Order of first appearance (not sorted) so chain A/B/C in a typical file
-  // gets colors in the order a reader would encounter them.
-  const chainOrder: string[] = []
-  for (const a of atomDetails) if (!chainOrder.includes(a.chain)) chainOrder.push(a.chain)
+  // gets colors in the order a reader would encounter them. Grouped by
+  // chainKey (chain + MODEL block), not chain alone, so a biological-
+  // assembly file that reuses chain letter "A" across many symmetry-
+  // generated copies (once past the single-character chain-ID space) still
+  // gets each physical copy its own color instead of merging them all.
+  const chainGroups: { key: string; chain: string; modelIndex: number }[] = []
+  const seenChainKeys = new Set<string>()
+  for (const a of atomDetails) {
+    const key = chainKey(a)
+    if (!seenChainKeys.has(key)) {
+      seenChainKeys.add(key)
+      chainGroups.push({ key, chain: a.chain, modelIndex: a.modelIndex })
+    }
+  }
+  const hasMultipleModels = chainGroups.some((g) => g.modelIndex > 0)
   const chainColorMap = new Map<string, THREE.Color>()
   const chainColors: Record<string, number> = {}
-  chainOrder.forEach((chain, i) => {
+  chainGroups.forEach((g, i) => {
     const hex = CHAIN_COLOR_PALETTE[i % CHAIN_COLOR_PALETTE.length]
-    chainColorMap.set(chain, new THREE.Color(hex))
-    chainColors[chain] = hex
+    chainColorMap.set(g.key, new THREE.Color(hex))
+    const label = hasMultipleModels ? `${g.chain}-${g.modelIndex + 1}` : g.chain
+    chainColors[label] = hex
   })
 
   geometryAtoms.computeBoundingBox()
@@ -185,7 +212,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
 
   function atomDisplayColor(i: number, currentColorMode: PDBColorMode): THREE.Color {
     if (currentColorMode === 'structure') return color.copy(CARTOON_COLORS[ssClass[i]])
-    if (currentColorMode === 'chain') return color.copy(chainColorMap.get(atomDetails[i].chain) ?? WHITE)
+    if (currentColorMode === 'chain') return color.copy(chainColorMap.get(chainKey(atomDetails[i])) ?? WHITE)
     return color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
   }
 
@@ -373,7 +400,13 @@ function isAtomLine(line: string): boolean {
 /** Re-parses residue/chain/atom-name info directly, matching PDBLoader's atom order exactly. */
 function parseAtomDetails(text: string): AtomDetail[] {
   const details: AtomDetail[] = []
+  let modelIndex = -1
+  let sawModel = false
   for (const line of text.split('\n')) {
+    if (line.slice(0, 5) === 'MODEL') {
+      modelIndex++
+      sawModel = true
+    }
     if (!isAtomLine(line)) continue
     let element = line.slice(76, 78).trim()
     if (!element) element = line.slice(12, 14).trim()
@@ -384,6 +417,7 @@ function parseAtomDetails(text: string): AtomDetail[] {
       resSeq: parseInt(line.slice(22, 26), 10) || 0,
       chain: line.slice(21, 22).trim() || '-',
       isHetero: line.slice(0, 6) === 'HETATM',
+      modelIndex: sawModel ? modelIndex : 0,
     })
   }
   return details
@@ -546,8 +580,34 @@ function resolveConectBondIndices(
   return pairs
 }
 
+/** Cheap check for at least one coordinate record, without a full parse -- used to tell a real assembly file apart from an empty/error response that still came back with a 200. */
+function hasAtomRecords(text: string): boolean {
+  return /^(ATOM|HETATM)/m.test(text)
+}
+
 export async function fetchPDBById(pdbId: string): Promise<string> {
   const id = pdbId.trim().toUpperCase()
+
+  // The plain "asymmetric unit" file (.pdb) only contains the coordinates
+  // RCSB actually deposited -- for many multi-chain assemblies (e.g. a
+  // viral capsid built from 60 symmetry-related copies of one protomer)
+  // that's just a small fragment, not the full particle RCSB's own
+  // thumbnails/viewer show. ".pdb1" is RCSB's biological-assembly-1 file,
+  // which has all symmetry-generated copies already expanded into
+  // ATOM/HETATM records (split across multiple MODEL blocks once the
+  // 1-character chain ID space runs out) -- try that first and fall back
+  // to the asymmetric unit for entries that don't have one (NMR ensembles,
+  // theoretical models, or simply a 404 on this legacy endpoint).
+  try {
+    const assemblyRes = await fetchWithTimeout(`https://files.rcsb.org/download/${id}.pdb1`)
+    if (assemblyRes.ok) {
+      const assemblyText = await assemblyRes.text()
+      if (hasAtomRecords(assemblyText)) return assemblyText
+    }
+  } catch {
+    // fall through to the asymmetric unit below
+  }
+
   const res = await fetchWithTimeout(`https://files.rcsb.org/download/${id}.pdb`)
   if (!res.ok) {
     throw new Error(`PDB ID "${id}"를 불러오지 못했습니다 (${res.status})`)

@@ -37,12 +37,17 @@ export function buildCartoonGroup(positions: THREE.Vector3[], atomDetails: AtomD
   const group = new THREE.Group()
   group.name = 'pdb-cartoon'
 
+  // Keyed by chain + MODEL block, not chain alone -- a biological-assembly
+  // file can reuse the same chain letter across many symmetry-generated
+  // copies, and grouping those together would sort CA atoms from unrelated
+  // physical copies into one bogus interleaved backbone trace.
   const byChain = new Map<string, ChainResidue[]>()
   for (let i = 0; i < atomDetails.length; i++) {
     const a = atomDetails[i]
     if (a.atomName !== 'CA') continue
-    let arr = byChain.get(a.chain)
-    if (!arr) byChain.set(a.chain, (arr = []))
+    const key = `${a.modelIndex}:${a.chain}`
+    let arr = byChain.get(key)
+    if (!arr) byChain.set(key, (arr = []))
     arr.push({ resSeq: a.resSeq, position: positions[i], ss: ssClass[i] })
   }
 

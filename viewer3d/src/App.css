@@ -79,6 +79,42 @@
   display: none;
 }
 
+.sidebar-collapse-btn {
+  display: none;
+}
+
+/* ---------- desktop: whole-sidebar collapse (separate from the mobile
+   drawer below) so a small viewport for cross-section work doesn't have to
+   fight the sidebar for space ---------- */
+
+@media (min-width: 861px) {
+  .sidebar-collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    flex-shrink: 0;
+    border: none;
+    border-right: 1px solid #1f2330;
+    background: #12141c;
+    color: #6f7690;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .sidebar-collapse-btn:hover {
+    background: #171b28;
+    color: #e8eaf0;
+  }
+
+  .sidebar--collapsed {
+    width: 0;
+    padding: 0;
+    border-right: none;
+    overflow: hidden;
+  }
+}
+
 /* ---------- mobile: sidebar becomes a slide-in drawer over the canvas ---------- */
 
 @media (max-width: 860px) {
@@ -158,6 +194,16 @@
   font-size: 12px;
   color: #767d92;
   line-height: 1.4;
+}
+
+.chain-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.chain-legend__item {
+  white-space: nowrap;
 }
 
 .btn {

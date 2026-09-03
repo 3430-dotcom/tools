@@ -15,6 +15,10 @@ function App() {
   const viewer = useThreeViewer()
   const [dragOver, setDragOver] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Desktop-only "collapse the whole sidebar" toggle -- separate from
+  // sidebarOpen, which drives the mobile slide-in drawer below the 860px
+  // breakpoint and must keep working independently of this.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [hintVisible, setHintVisible] = useState(false)
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const draggingPlane = useRef(false)
@@ -85,7 +89,7 @@ function App() {
 
       <main className="app-body">
         <Sidebar
-          className={sidebarOpen ? 'sidebar--open' : ''}
+          className={`${sidebarOpen ? 'sidebar--open' : ''} ${sidebarCollapsed ? 'sidebar--collapsed' : ''}`}
           modelKind={viewer.modelKind}
           modelInfo={viewer.modelInfo}
           axisState={viewer.axisState}
@@ -116,6 +120,15 @@ function App() {
             if (data) download(data, `viewer3d-${Date.now()}.png`)
           }}
         />
+
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          onClick={() => setSidebarCollapsed((v) => !v)}
+        >
+          {sidebarCollapsed ? '▸' : '◂'}
+        </button>
 
         <div
           className={`sidebar-backdrop ${sidebarOpen ? 'sidebar-backdrop--visible' : ''}`}

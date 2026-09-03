@@ -129,6 +129,7 @@ export function Sidebar(props: SidebarProps) {
     if (props.searchResults.length > 0) setResultsOpen(true)
   }, [props.searchResults])
   const [pdbSamplesOpen, setPdbSamplesOpen] = useState(true)
+  const [colorLegendOpen, setColorLegendOpen] = useState(true)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestions = matchingSuggestions(searchQuery)
 
@@ -323,13 +324,45 @@ export function Sidebar(props: SidebarProps) {
                 >
                   2차 구조별
                 </button>
+                <button
+                  className={props.colorMode === 'chain' ? 'active' : ''}
+                  onClick={() => props.onColorModeChange('chain')}
+                >
+                  체인별
+                </button>
               </div>
-              {props.colorMode === 'structure' && (
-                <p className="hint">
-                  <span style={{ color: '#ff4d6d' }}>●</span> 알파 나선 &nbsp;
-                  <span style={{ color: '#ffd23f' }}>●</span> 베타 시트 &nbsp;
-                  <span style={{ color: '#dfe6f0' }}>●</span> 루프/코일
-                </p>
+              {(props.colorMode === 'structure' || props.colorMode === 'chain') && (
+                <>
+                  <button
+                    type="button"
+                    className="collapsible-toggle"
+                    onClick={() => setColorLegendOpen((v) => !v)}
+                    aria-expanded={colorLegendOpen}
+                  >
+                    <span>범례</span>
+                    <span className="collapsible-toggle__chevron">{colorLegendOpen ? '▾' : '▸'}</span>
+                  </button>
+                  {colorLegendOpen && props.colorMode === 'structure' && (
+                    <p className="hint">
+                      <span style={{ color: '#ff4d6d' }}>●</span> 알파 나선 &nbsp;
+                      <span style={{ color: '#ffd23f' }}>●</span> 베타 시트 &nbsp;
+                      <span style={{ color: '#dfe6f0' }}>●</span> 루프/코일
+                    </p>
+                  )}
+                  {colorLegendOpen && props.colorMode === 'chain' && (
+                    <p className="hint chain-legend">
+                      {props.modelInfo?.kind === 'pdb' && Object.keys(props.modelInfo.chainColors).length > 0 ? (
+                        Object.entries(props.modelInfo.chainColors).map(([chain, hex]) => (
+                          <span key={chain} className="chain-legend__item">
+                            <span style={{ color: `#${hex.toString(16).padStart(6, '0')}` }}>●</span> 체인 {chain}
+                          </span>
+                        ))
+                      ) : (
+                        '체인 정보가 없어요.'
+                      )}
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
@@ -343,6 +376,9 @@ export function Sidebar(props: SidebarProps) {
             <input type="checkbox" checked={props.wireframe} onChange={(e) => props.onWireframeChange(e.target.checked)} />
             와이어프레임
           </label>
+          {props.modelInfo?.kind === 'stl' && props.modelInfo.hasEmbeddedColor && (
+            <p className="hint">이 STL 파일에 저장된 색상을 그대로 표시하고 있어요.</p>
+          )}
         </section>
       )}
 

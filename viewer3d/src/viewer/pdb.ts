@@ -4,6 +4,7 @@ import { elementRadius } from './colors'
 import { buildCartoonGroup, CARTOON_COLORS, type SSClass } from './cartoon'
 import { AXES, type Axis, type AxisState } from './crossSection'
 import { fetchWithTimeout } from './net'
+import { mmcifToLegacyPDB } from './mmcif'
 
 /** The ball-and-stick bond color, exported so the cross-section cap over a cut bond can match it instead of a mismatched flat color. */
 export const BOND_COLOR_HEX = 0xaaaaaa
@@ -608,11 +609,39 @@ export async function fetchPDBById(pdbId: string): Promise<string> {
     // fall through to the asymmetric unit below
   }
 
-  const res = await fetchWithTimeout(`https://files.rcsb.org/download/${id}.pdb`)
-  if (!res.ok) {
-    throw new Error(`PDB ID "${id}"를 불러오지 못했습니다 (${res.status})`)
+  try {
+    const res = await fetchWithTimeout(`https://files.rcsb.org/download/${id}.pdb`)
+    if (res.ok) {
+      const text = await res.text()
+      if (hasAtomRecords(text)) return text
+    }
+  } catch {
+    // fall through to mmCIF below
   }
-  return res.text()
+
+  // Neither legacy file exists -- this is normal for cryo-EM entries and
+  // other large assemblies, since the legacy PDB format's 1-character
+  // chain-ID and 5-digit atom-serial limits can't hold them, so RCSB never
+  // generates one. mmCIF (.cif) is the one format RCSB always provides;
+  // convert it to the same legacy-PDB text shape the rest of the app
+  // expects (see mmcif.ts). Try the biological-assembly mmCIF first (same
+  // reasoning as .pdb1 above) and fall back to the always-available
+  // asymmetric-unit .cif.
+  try {
+    const assemblyRes = await fetchWithTimeout(`https://files.rcsb.org/download/${id}-assembly1.cif`)
+    if (assemblyRes.ok) {
+      const converted = mmcifToLegacyPDB(await assemblyRes.text())
+      if (hasAtomRecords(converted)) return converted
+    }
+  } catch {
+    // fall through to the plain .cif below
+  }
+
+  const cifRes = await fetchWithTimeout(`https://files.rcsb.org/download/${id}.cif`)
+  if (!cifRes.ok) {
+    throw new Error(`PDB ID "${id}"를 불러오지 못했습니다 (${cifRes.status})`)
+  }
+  return mmcifToLegacyPDB(await cifRes.text())
 }
 
 export interface PDBSearchResult {

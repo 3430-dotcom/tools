@@ -63,6 +63,8 @@ const SEARCH_SUGGESTIONS = [
 ]
 
 const MAX_SUGGESTIONS = 6
+/** Cap on how many chain-legend entries to list before collapsing the rest into a "+N more" note -- a large biological assembly can have dozens. */
+const MAX_CHAIN_LEGEND_ITEMS = 20
 
 function matchingSuggestions(query: string) {
   const trimmed = query.trim().toLowerCase()
@@ -352,11 +354,23 @@ export function Sidebar(props: SidebarProps) {
                   {colorLegendOpen && props.colorMode === 'chain' && (
                     <p className="hint chain-legend">
                       {props.modelInfo?.kind === 'pdb' && Object.keys(props.modelInfo.chainColors).length > 0 ? (
-                        Object.entries(props.modelInfo.chainColors).map(([chain, hex]) => (
-                          <span key={chain} className="chain-legend__item">
-                            <span style={{ color: `#${hex.toString(16).padStart(6, '0')}` }}>●</span> 체인 {chain}
-                          </span>
-                        ))
+                        <>
+                          {/* A biological assembly (e.g. a 60-copy viral capsid) can have dozens of chains --
+                              cap the legend so it doesn't dominate the sidebar; the color palette itself
+                              still cycles through all of them in the 3D view. */}
+                          {Object.entries(props.modelInfo.chainColors)
+                            .slice(0, MAX_CHAIN_LEGEND_ITEMS)
+                            .map(([chain, hex]) => (
+                              <span key={chain} className="chain-legend__item">
+                                <span style={{ color: `#${hex.toString(16).padStart(6, '0')}` }}>●</span> 체인 {chain}
+                              </span>
+                            ))}
+                          {Object.keys(props.modelInfo.chainColors).length > MAX_CHAIN_LEGEND_ITEMS && (
+                            <span className="chain-legend__item">
+                              …외 {Object.keys(props.modelInfo.chainColors).length - MAX_CHAIN_LEGEND_ITEMS}개 (색상은 반복돼요)
+                            </span>
+                          )}
+                        </>
                       ) : (
                         '체인 정보가 없어요.'
                       )}

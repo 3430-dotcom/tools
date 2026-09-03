@@ -91,9 +91,21 @@ export interface PDBModel {
 
 const loader = new PDBLoader()
 
-const sphereGeometry = new THREE.SphereGeometry(1, 20, 16)
-const cylinderGeometry = new THREE.CylinderGeometry(1, 1, 1, 10)
-cylinderGeometry.translate(0, 0.5, 0)
+// Two levels of sphere/cylinder detail for atoms/bonds. Above
+// LOW_DETAIL_ATOM_THRESHOLD atoms (a large multi-copy assembly like a viral
+// capsid, now loadable at all since the biological-assembly/mmCIF fetch
+// changes) each instance covers only a few screen pixels anyway, so the
+// extra triangles of the high-detail geometry are pure rotate/pan cost for
+// no visible benefit -- instancing keeps draw calls low regardless of atom
+// count, but per-instance triangle count still multiplies the vertex work
+// every frame.
+const LOW_DETAIL_ATOM_THRESHOLD = 8000
+const sphereGeometryHigh = new THREE.SphereGeometry(1, 20, 16)
+const sphereGeometryLow = new THREE.SphereGeometry(1, 10, 8)
+const cylinderGeometryHigh = new THREE.CylinderGeometry(1, 1, 1, 10)
+cylinderGeometryHigh.translate(0, 0.5, 0)
+const cylinderGeometryLow = new THREE.CylinderGeometry(1, 1, 1, 6)
+cylinderGeometryLow.translate(0, 0.5, 0)
 const discGeometry = new THREE.CircleGeometry(1, 24)
 
 const BOND_RADIUS = 0.12
@@ -171,8 +183,9 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     )
   }
 
+  const lowDetail = atomCount > LOW_DETAIL_ATOM_THRESHOLD
   const atomMesh = new THREE.InstancedMesh(
-    sphereGeometry,
+    lowDetail ? sphereGeometryLow : sphereGeometryHigh,
     // Base material color must stay white -- instance colors (setColorAt)
     // multiply into it, so anything less than white would tint every atom.
     new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.05 }),
@@ -194,7 +207,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     conectBondCount >= atomCount * 0.5 ? resolveConectBondIndices(conectPos, conectBondCount, positions, center) : inferBondsByDistance(positions, radii)
 
   const bondMesh = new THREE.InstancedMesh(
-    cylinderGeometry,
+    lowDetail ? cylinderGeometryLow : cylinderGeometryHigh,
     // Base material color must stay white for the same instance-color reason as atomMesh.
     new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 }),
     Math.max(bondPairs.length, 1),

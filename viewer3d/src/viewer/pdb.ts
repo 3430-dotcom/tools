@@ -291,10 +291,30 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const capCenter = new THREE.Vector3()
 
   function updateAtomCapsFn(planes: Record<Axis, THREE.Plane>, state: Record<Axis, AxisState>, onlyAxis?: Axis) {
+    // Visibility and "which other axes clip this disc" are cheap (O(axes))
+    // and have to stay correct for every axis whenever ANY axis's enabled
+    // state changes -- e.g. toggling Z on should immediately start clipping
+    // X's and Y's already-placed discs by Z too, even though only Z's own
+    // per-atom transforms need recomputing below. Always refreshing all
+    // three here (regardless of onlyAxis) avoids leaving another axis's
+    // disc clipped by a now-stale set of planes.
+    for (const axis of AXES) {
+      const mesh = capDiscMeshes[axis]
+      mesh.visible = state[axis].enabled && currentRenderMode !== 'cartoon'
+      // This axis's cap disc marks where its own plane cuts through an atom,
+      // but with two or more axes active at once, another active plane can
+      // have already cut that same spot away entirely -- without also
+      // clipping the disc by every OTHER active plane, it stayed fully
+      // visible there, leaving a flat, disconnected-looking patch floating
+      // in a region the model itself no longer occupies. References the
+      // shared Plane objects (not copies), so this stays correct even when
+      // this disc's own transform pass doesn't re-run this tick.
+      const otherActivePlanes = AXES.filter((a) => a !== axis && state[a].enabled).map((a) => planes[a])
+      ;(mesh.material as THREE.Material & { clippingPlanes: THREE.Plane[] | null }).clippingPlanes = otherActivePlanes
+    }
+
     for (const axis of onlyAxis ? [onlyAxis] : AXES) {
       const mesh = capDiscMeshes[axis]
-      const axisState = state[axis]
-      mesh.visible = axisState.enabled && currentRenderMode !== 'cartoon'
       if (!mesh.visible) continue
 
       const plane = planes[axis]

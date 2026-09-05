@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { PDBLoader } from 'three/examples/jsm/loaders/PDBLoader.js'
-import { elementRadius } from './colors'
+import { elementColor, elementRadius } from './colors'
 import { buildCartoonGroup, CARTOON_COLORS, type SSClass } from './cartoon'
 import { AXES, type Axis, type AxisState } from './crossSection'
 import { fetchWithTimeout } from './net'
@@ -120,10 +120,9 @@ cylinderGeometryLow.translate(0, 0.5, 0)
 const discGeometry = new THREE.CircleGeometry(1, 24)
 
 // Heteroatom-symbol textures for the structural-formula overlay (see
-// PDBModel.setFormulaOverlay) -- a bold glyph with a halo instead of a badge
-// behind it, since these sit directly on top of atom spheres/bond lines and
-// need to read at a glance the way PubChem's own O/N labels do, not compete
-// with a filled background for attention. Cached by symbol+theme -- only a
+// PDBModel.setFormulaOverlay) -- these sit directly on top of atom spheres and
+// bond lines and have to read at a glance the way PubChem's own O/N labels
+// do. Cached by symbol+theme -- only a
 // handful of distinct elements ever need a texture for one molecule, and
 // only two themes exist, so this stays cheap however many heteroatoms a
 // compound has.
@@ -137,17 +136,23 @@ function labelTexture(symbol: string, theme: Background): THREE.CanvasTexture {
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')!
+  // Opaque backing disc, not just a halo: the atom's own sphere sits directly
+  // behind the label, and a letter like "O" is a ring -- through its counter
+  // the red sphere showed and the whole label read as a colored dot instead
+  // of a letter. The disc blanks the sphere out the way the white paper does
+  // in a printed structural formula.
+  ctx.fillStyle = theme === 'dark' ? '#11141c' : '#eef1f7'
+  ctx.beginPath()
+  ctx.arc(size / 2, size / 2, size / 2 - 3, 0, Math.PI * 2)
+  ctx.fill()
+
   ctx.font = `800 ${symbol.length > 1 ? 76 : 92}px sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  // The halo (opposite the glyph's own color) is what keeps the letter
-  // legible over whatever happens to be behind it -- a flat fill alone
-  // washes out against an atom sphere or bond line of a similar color.
-  ctx.lineJoin = 'round'
-  ctx.lineWidth = 14
-  ctx.strokeStyle = theme === 'dark' ? 'rgba(10, 12, 20, 0.9)' : 'rgba(255, 255, 255, 0.9)'
-  ctx.strokeText(symbol, size / 2, size / 2 + 2)
-  ctx.fillStyle = theme === 'dark' ? '#f4f6fb' : '#14161f'
+  // Element-colored glyph (O red, N blue) -- the same convention PubChem's
+  // own depiction uses, and the same palette the atoms themselves are
+  // colored from, so the label and the sphere it covers agree.
+  ctx.fillStyle = elementColor(symbol)
   ctx.fillText(symbol, size / 2, size / 2 + 2)
   const texture = new THREE.CanvasTexture(canvas)
   labelTextureCache.set(cacheKey, texture)
@@ -303,12 +308,15 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       const [a, b] = bondPairs[i]
       const start = positions[a]
       const end = positions[b]
-      const mid = start.clone().add(end).multiplyScalar(0.5)
       const dir = end.clone().sub(start)
       const length = dir.length() || 0.0001
       dir.normalize()
       q.setFromUnitVectors(UP, dir)
-      m.compose(mid, q, s.set(BOND_RADIUS, length, BOND_RADIUS))
+      // Anchored at `start`, not the midpoint: the shared cylinder geometry is
+      // translated so its base (not its center) sits at the origin, so a
+      // midpoint anchor made every bond start halfway along and shoot an equal
+      // length out past the far atom -- the spikes this used to render.
+      m.compose(start, q, s.set(BOND_RADIUS, length, BOND_RADIUS))
       bondMesh.setMatrixAt(i, m)
       bondMesh.setColorAt(i, highlightedBonds.includes(i) ? BOND_HIGHLIGHT_COLOR : BOND_DEFAULT_COLOR)
     }
@@ -454,8 +462,11 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   // sprite letters on heteroatoms only (skipping C and H, the way a real
   // structural formula does). Built once, like the cap discs above, and
   // just toggled visible/hidden rather than rebuilt on every mode switch.
-  const FORMULA_BOND_RADIUS = 0.045
-  const FORMULA_LINE_SEPARATION = 0.16
+  // Tuned against a whole aspirin on screen, not a zoomed-in bond: the lines
+  // have to stay separable as *two* lines at the distance the model is
+  // actually framed at, which needs a gap several times the line's own width.
+  const FORMULA_BOND_RADIUS = 0.05
+  const FORMULA_LINE_SEPARATION = 0.26
   const FORMULA_COLOR_DARK = 0xf4f6fb
   const FORMULA_COLOR_LIGHT = 0x14161f
 
@@ -564,7 +575,10 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     const symbol = atomDetails[i].element
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(symbol, formulaTheme), transparent: true, depthTest: false, depthWrite: false }))
     sprite.renderOrder = 11
-    sprite.scale.set(0.5, 0.5, 1)
+    // Wide enough to cover the ball-and-stick sphere underneath it -- at half
+    // this size the sphere rimmed out around the glyph and the label read as a
+    // colored ring rather than a letter.
+    sprite.scale.set(1.05, 1.05, 1)
     sprite.position.copy(positions[i])
     formulaLabelGroup.add(sprite)
     formulaLabelSprites.push({ sprite, symbol })
@@ -574,9 +588,12 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     const active = formulaEnabled && currentRenderMode === 'ball-stick'
     formulaBondMesh.visible = active
     formulaLabelGroup.visible = active
-    // Two cylinder sets occupying the same spot are a z-fighting mess --
-    // the overlay replaces the plain grey bonds rather than joining them.
-    if (active) bondMesh.visible = false
+    // Two cylinder sets occupying the same spot are a z-fighting mess -- the
+    // overlay replaces the plain grey bonds rather than joining them. Stated
+    // as the full rule (mirroring applyBonds) rather than a one-way "hide",
+    // so switching the overlay back off hands the grey bonds back instead of
+    // leaving the atoms floating unconnected.
+    bondMesh.visible = !active && currentRenderMode === 'ball-stick' && bondPairs.length > 0
   }
 
   function applyMode(currentMode: PDBRenderMode) {

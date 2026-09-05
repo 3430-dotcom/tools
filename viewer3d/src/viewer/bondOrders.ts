@@ -66,8 +66,16 @@ export function inferBondOrders(positions: THREE.Vector3[], elements: string[], 
   const bondIndex = new Map<string, number>()
   bondPairs.forEach(([a, b], i) => bondIndex.set(bondOrderKey(a, b), i))
 
-  const rings = findRings(adj, elements, { sizes: [5, 6] })
-  for (const ring of rings) {
+  // findRings walks each cycle from its lowest-indexed atom in both
+  // directions, so every ring comes back twice -- dedupe by atom set before
+  // any of them is acted on, or the second copy would undo the first's work.
+  const seenRings = new Set<string>()
+  const aromaticRings: number[][] = []
+  for (const ring of findRings(adj, elements, { sizes: [5, 6] })) {
+    const ringKey = [...ring].sort((x, y) => x - y).join(',')
+    if (seenRings.has(ringKey)) continue
+    seenRings.add(ringKey)
+
     const ringBondIndices: number[] = []
     let isAromaticRing = true
     for (let k = 0; k < ring.length; k++) {
@@ -81,13 +89,40 @@ export function inferBondOrders(positions: THREE.Vector3[], elements: string[], 
       }
       ringBondIndices.push(idx)
     }
-    if (!isAromaticRing) continue
-    // Alternate double/single around the cycle (a benzene ring comes out as
-    // three double + three single, matching how a real structural formula
-    // draws it) instead of marking every ring bond double.
-    ringBondIndices.forEach((idx, k) => {
-      orders[idx] = k % 2 === 0 ? 2 : 1
-    })
+    if (isAromaticRing) aromaticRings.push(ringBondIndices)
+  }
+
+  // The length pass has already called every aromatic ring bond a double --
+  // benzene's ~1.39 A sits under the C-C double cutoff -- so clear them before
+  // deciding which half of the ring actually gets drawn doubled. Without this
+  // every ring atom would look "already doubled" to the alternation below and
+  // the whole ring would come out single.
+  for (const idx of aromaticRings.flat()) orders[idx] = 1
+
+  // An atom that already carries a double bond can't take another one. Seeded
+  // from the surviving non-ring orders, so an exocyclic C=O (caffeine's ring
+  // carbonyls, say) stops its ring carbon from also taking a ring double.
+  const hasDouble = new Array(positions.length).fill(false)
+  bondPairs.forEach(([a, b], i) => {
+    if (orders[i] >= 2) {
+      hasDouble[a] = true
+      hasDouble[b] = true
+    }
+  })
+
+  // Alternate double/single around each cycle so a benzene comes out as three
+  // double + three single, the way a real structural formula draws it. Taken
+  // greedily against `hasDouble` rather than by even/odd position: a
+  // five-membered ring's wrap-around, and an atom shared with a fused ring,
+  // would otherwise land two double bonds on the same atom.
+  for (const ringBondIndices of aromaticRings) {
+    for (const idx of ringBondIndices) {
+      const [a, b] = bondPairs[idx]
+      if (hasDouble[a] || hasDouble[b]) continue
+      orders[idx] = 2
+      hasDouble[a] = true
+      hasDouble[b] = true
+    }
   }
 
   return orders

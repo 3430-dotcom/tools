@@ -241,8 +241,10 @@ export function Sidebar(props: SidebarProps) {
         </div>
         <p className="hint">
           단백질/분자의 <strong>영문 이름</strong>으로 검색하세요 (예: hemoglobin, insulin, alcohol dehydrogenase, aspirin).
-          RCSB(단백질)와 PubChem(일반 화합물)을 함께 검색해서 결과를 따로 보여드려요. 둘 다 영문 데이터베이스라 한글
-          검색어는 결과가 나오지 않습니다 — 한글로 입력하면 아는 이름의 영문 검색어를 추천해드려요.
+          RCSB와 PubChem을 함께 검색해서 결과를 따로 보여드려요 — 같은 이름이어도 둘은 서로 다른 걸 뜻해요: RCSB는{' '}
+          <strong>그 화합물이 결합된 단백질</strong>을, PubChem은 <strong>그 화합물 자체</strong>를 보여줍니다. 둘 다
+          영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다 — 한글로 입력하면 아는 이름의 영문 검색어를
+          추천해드려요.
         </p>
         {props.searchResults.length > 0 && (
           <>
@@ -252,31 +254,34 @@ export function Sidebar(props: SidebarProps) {
               onClick={() => setResultsOpen((v) => !v)}
               aria-expanded={resultsOpen}
             >
-              <span>단백질 검색 결과 {props.searchResults.length}개 (RCSB)</span>
+              <span>단백질 구조 결과 {props.searchResults.length}개 (RCSB)</span>
               <span className="collapsible-toggle__chevron">{resultsOpen ? '▾' : '▸'}</span>
             </button>
             {resultsOpen && (
-              <ul className="search-results">
-                {props.searchResults.map((r) => (
-                  <li key={r.id}>
-                    <button className="search-result" onClick={() => props.onLoadFromInput(r.id)} title={resultTooltip(r)}>
-                      {!failedThumbnails.has(r.id) && (
-                        <img
-                          className="search-result__thumb"
-                          src={r.thumbnailUrl}
-                          alt=""
-                          loading="lazy"
-                          onError={() => setFailedThumbnails((prev) => new Set(prev).add(r.id))}
-                        />
-                      )}
-                      <div className="search-result__text">
-                        <span className="search-result__id">{r.id}</span>
-                        <span className="search-result__title">{r.title}</span>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p className="hint">이 화합물이 결합된 단백질·효소 구조예요 (원자 수천 개 이상, 화합물 자체보다 훨씬 커요).</p>
+                <ul className="search-results">
+                  {props.searchResults.map((r) => (
+                    <li key={r.id}>
+                      <button className="search-result" onClick={() => props.onLoadFromInput(r.id)} title={resultTooltip(r)}>
+                        {!failedThumbnails.has(r.id) && (
+                          <img
+                            className="search-result__thumb"
+                            src={r.thumbnailUrl}
+                            alt=""
+                            loading="lazy"
+                            onError={() => setFailedThumbnails((prev) => new Set(prev).add(r.id))}
+                          />
+                        )}
+                        <div className="search-result__text">
+                          <span className="search-result__id">{r.id}</span>
+                          <span className="search-result__title">{r.title}</span>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </>
         )}
@@ -289,30 +294,33 @@ export function Sidebar(props: SidebarProps) {
               onClick={() => setCompoundResultsOpen((v) => !v)}
               aria-expanded={compoundResultsOpen}
             >
-              <span>화합물 검색 결과 {props.compoundResults.length}개 (PubChem)</span>
+              <span>화합물 분자 결과 {props.compoundResults.length}개 (PubChem)</span>
               <span className="collapsible-toggle__chevron">{compoundResultsOpen ? '▾' : '▸'}</span>
             </button>
             {compoundResultsOpen && (
-              <ul className="search-results">
-                {props.compoundResults.map((c) => (
-                  <li key={c.name}>
-                    <button className="search-result" onClick={() => props.onLoadFromInput(c.name)} title={c.name}>
-                      {!failedCompoundThumbnails.has(c.name) && (
-                        <img
-                          className="search-result__thumb search-result__thumb--compound"
-                          src={c.thumbnailUrl}
-                          alt=""
-                          loading="lazy"
-                          onError={() => setFailedCompoundThumbnails((prev) => new Set(prev).add(c.name))}
-                        />
-                      )}
-                      <div className="search-result__text">
-                        <span className="search-result__title">{c.name}</span>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p className="hint">이 화합물 자체의 3D 구조예요 (단백질에 결합된 형태가 아니라 분자 하나만 보여줘요).</p>
+                <ul className="search-results">
+                  {props.compoundResults.map((c) => (
+                    <li key={c.name}>
+                      <button className="search-result" onClick={() => props.onLoadFromInput(c.name)} title={c.name}>
+                        {!failedCompoundThumbnails.has(c.name) && (
+                          <img
+                            className="search-result__thumb search-result__thumb--compound"
+                            src={c.thumbnailUrl}
+                            alt=""
+                            loading="lazy"
+                            onError={() => setFailedCompoundThumbnails((prev) => new Set(prev).add(c.name))}
+                          />
+                        )}
+                        <div className="search-result__text">
+                          <span className="search-result__title">{c.name}</span>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </>
         )}

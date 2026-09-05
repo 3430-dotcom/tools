@@ -252,7 +252,7 @@ export function Sidebar(props: SidebarProps) {
               onClick={() => setResultsOpen((v) => !v)}
               aria-expanded={resultsOpen}
             >
-              <span>검색 결과 {props.searchResults.length}개</span>
+              <span>단백질 검색 결과 {props.searchResults.length}개 (RCSB)</span>
               <span className="collapsible-toggle__chevron">{resultsOpen ? '▾' : '▸'}</span>
             </button>
             {resultsOpen && (

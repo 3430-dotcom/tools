@@ -613,6 +613,35 @@
   line-height: 1.6;
 }
 
+/* Corner widget for moving the view position (see panView in SceneManager).
+   Deliberately separate from the main viewport, which stays rotate-only on
+   left-drag -- trackpad-only users (no reliable right-click-drag) still
+   need some way to pan, so it lives here instead of behind a mouse button. */
+.view-pan-widget {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(19, 23, 34, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #c9cde0;
+  backdrop-filter: blur(6px);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.view-pan-widget:hover {
+  background: rgba(19, 23, 34, 0.92);
+  color: #f4f6fb;
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
 .status-toast {
   position: absolute;
   top: 16px;

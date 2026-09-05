@@ -534,6 +534,11 @@ export function useThreeViewer() {
 
   const screenshot = useCallback(() => sceneRef.current?.screenshot() ?? null, [])
 
+  /** Moves the view position (see SceneManager.panView) -- driven by the dedicated pan widget rather than the main viewport, which stays rotate-only. */
+  const panView = useCallback((deltaX: number, deltaY: number) => {
+    sceneRef.current?.panView(deltaX, deltaY)
+  }, [])
+
   /** Picks whichever of an atom or a bond is closer to the camera under this viewport coordinate. */
   // The disc caps read each atom's highlight state at recompute time (see
   // pdb.ts), so a selection change has to trigger the same recompute the
@@ -757,5 +762,6 @@ export function useThreeViewer() {
     endPlaneDrag,
     resetView,
     screenshot,
+    panView,
   }
 }

@@ -188,6 +188,30 @@ export class SceneManager {
     this.controls.autoRotate = enabled
   }
 
+  /**
+   * Shifts the camera and its orbit target together by a screen-space pixel
+   * delta, perpendicular to the view direction -- moving the framed view
+   * position itself rather than rotating around it. This is the exact pan
+   * math OrbitControls uses internally for its own (right-click-drag) pan,
+   * reproduced here so it can be driven from the dedicated pan widget
+   * instead -- trackpad-only users (no reliable right-click-drag) still get
+   * the same panning, at the same speed, just from a different gesture.
+   */
+  panView(deltaX: number, deltaY: number) {
+    const offset = this.camera.position.clone().sub(this.controls.target)
+    let targetDistance = offset.length()
+    targetDistance *= Math.tan(((this.camera.fov / 2) * Math.PI) / 180)
+    const height = this.renderer.domElement.clientHeight || 1
+    const scale = (2 * targetDistance) / height
+
+    const xColumn = new THREE.Vector3().setFromMatrixColumn(this.camera.matrix, 0)
+    const yColumn = new THREE.Vector3().setFromMatrixColumn(this.camera.matrix, 1)
+    const pan = xColumn.multiplyScalar(-deltaX * scale).add(yColumn.multiplyScalar(deltaY * scale))
+
+    this.camera.position.add(pan)
+    this.controls.target.add(pan)
+  }
+
   clearModel() {
     while (this.modelRoot.children.length) {
       this.modelRoot.remove(this.modelRoot.children[0])

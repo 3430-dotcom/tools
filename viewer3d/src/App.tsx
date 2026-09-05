@@ -23,6 +23,7 @@ function App() {
   const [hintVisible, setHintVisible] = useState(false)
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const draggingPlane = useRef(false)
+  const panDrag = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null)
 
   // Show the "click an atom" hint only briefly right after a model loads --
   // modelInfo gets a fresh object on every load, so this effect re-fires
@@ -204,6 +205,35 @@ function App() {
               if (!draggingPlane.current) e.currentTarget.classList.remove('canvas-host--plane-hover')
             }}
           />
+
+          <div
+            className="view-pan-widget"
+            title="드래그하여 화면 위치 이동 (본 화면 드래그는 회전)"
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId)
+              panDrag.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY }
+            }}
+            onPointerMove={(e) => {
+              const drag = panDrag.current
+              if (!drag || drag.pointerId !== e.pointerId) return
+              viewer.panView(e.clientX - drag.lastX, e.clientY - drag.lastY)
+              drag.lastX = e.clientX
+              drag.lastY = e.clientY
+            }}
+            onPointerUp={(e) => {
+              if (panDrag.current?.pointerId === e.pointerId) panDrag.current = null
+            }}
+            onPointerCancel={(e) => {
+              if (panDrag.current?.pointerId === e.pointerId) panDrag.current = null
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M10 9h4V6h3l-5-5-5 5h3v3zM9 10H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"
+              />
+            </svg>
+          </div>
 
           {viewer.showCaption &&
             viewer.modelInfo?.kind === 'pdb' &&

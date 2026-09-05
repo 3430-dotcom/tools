@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AxisSlider } from './AxisSlider'
 import type { Axis, AxisState } from '../viewer/crossSection'
 import type { PDBColorMode, PDBRenderMode, PDBSearchResult } from '../viewer/pdb'
+import type { PubchemSearchResult } from '../viewer/pubchem'
 import type { Background } from '../viewer/SceneManager'
 import type { ModelInfo, ModelKind } from '../types'
 
@@ -21,12 +22,13 @@ const PDB_SAMPLES = [
 const AXES: Axis[] = ['x', 'y', 'z']
 
 /**
- * A curated list of biomolecules students are likely to recognize by their
- * Korean name but not know the English search term for -- RCSB's search is
- * English-only (see the hint text below the search box), so typing the
- * Korean name here surfaces the matching English term to search with
- * instead of leaving the student stuck. Deliberately a static local list,
- * not a live API suggestion, so this works with zero network dependency.
+ * A curated list of biomolecules and everyday compounds students are likely
+ * to recognize by their Korean name but not know the English search term
+ * for -- both RCSB and PubChem are English-only (see the hint text below
+ * the search box), so typing the Korean name here surfaces the matching
+ * English term to search with instead of leaving the student stuck.
+ * Deliberately a static local list, not a live API suggestion, so this
+ * works with zero network dependency.
  */
 const SEARCH_SUGGESTIONS = [
   { ko: '헤모글로빈', en: 'hemoglobin' },
@@ -60,6 +62,21 @@ const SEARCH_SUGGESTIONS = [
   { ko: 'ACE2 수용체', en: 'ACE2' },
   { ko: 'p53 단백질', en: 'p53' },
   { ko: '크리스퍼 카스9', en: 'CRISPR Cas9' },
+  { ko: '프탈산 다이뷰틸', en: 'dibutyl phthalate' },
+  { ko: '톨루엔', en: 'toluene' },
+  { ko: '벤젠', en: 'benzene' },
+  { ko: '폼알데하이드', en: 'formaldehyde' },
+  { ko: '메탄올', en: 'methanol' },
+  { ko: '아세톤', en: 'acetone' },
+  { ko: '클로로폼', en: 'chloroform' },
+  { ko: '요소', en: 'urea' },
+  { ko: '구연산', en: 'citric acid' },
+  { ko: '자당', en: 'sucrose' },
+  { ko: '이부프로펜', en: 'ibuprofen' },
+  { ko: '아세트아미노펜', en: 'acetaminophen' },
+  { ko: '아스코르브산', en: 'ascorbic acid' },
+  { ko: '멘톨', en: 'menthol' },
+  { ko: '바닐린', en: 'vanillin' },
 ]
 
 const MAX_SUGGESTIONS = 6
@@ -108,6 +125,7 @@ interface SidebarProps {
   onLoadSample: (url: string, kind: 'pdb' | 'stl') => void
   onLoadFromInput: (value: string) => void
   searchResults: PDBSearchResult[]
+  compoundResults: PubchemSearchResult[]
   searching: boolean
   onSearch: (query: string) => void
   onResetView: () => void
@@ -130,6 +148,11 @@ export function Sidebar(props: SidebarProps) {
   useEffect(() => {
     if (props.searchResults.length > 0) setResultsOpen(true)
   }, [props.searchResults])
+  const [compoundResultsOpen, setCompoundResultsOpen] = useState(true)
+  useEffect(() => {
+    if (props.compoundResults.length > 0) setCompoundResultsOpen(true)
+  }, [props.compoundResults])
+  const [failedCompoundThumbnails, setFailedCompoundThumbnails] = useState<Set<string>>(new Set())
   const [pdbSamplesOpen, setPdbSamplesOpen] = useState(true)
   const [colorLegendOpen, setColorLegendOpen] = useState(true)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -217,9 +240,9 @@ export function Sidebar(props: SidebarProps) {
           </button>
         </div>
         <p className="hint">
-          단백질/분자의 <strong>영문 이름</strong>으로 검색하세요 (예: hemoglobin, insulin, alcohol dehydrogenase). RCSB는
-          영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다. 한글로 입력하면 아는 이름의 영문 검색어를
-          추천해드려요.
+          단백질/분자의 <strong>영문 이름</strong>으로 검색하세요 (예: hemoglobin, insulin, alcohol dehydrogenase, aspirin).
+          RCSB(단백질)와 PubChem(일반 화합물)을 함께 검색해서 결과를 따로 보여드려요. 둘 다 영문 데이터베이스라 한글
+          검색어는 결과가 나오지 않습니다 — 한글로 입력하면 아는 이름의 영문 검색어를 추천해드려요.
         </p>
         {props.searchResults.length > 0 && (
           <>
@@ -249,6 +272,42 @@ export function Sidebar(props: SidebarProps) {
                       <div className="search-result__text">
                         <span className="search-result__id">{r.id}</span>
                         <span className="search-result__title">{r.title}</span>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {props.compoundResults.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="collapsible-toggle"
+              onClick={() => setCompoundResultsOpen((v) => !v)}
+              aria-expanded={compoundResultsOpen}
+            >
+              <span>화합물 검색 결과 {props.compoundResults.length}개 (PubChem)</span>
+              <span className="collapsible-toggle__chevron">{compoundResultsOpen ? '▾' : '▸'}</span>
+            </button>
+            {compoundResultsOpen && (
+              <ul className="search-results">
+                {props.compoundResults.map((c) => (
+                  <li key={c.name}>
+                    <button className="search-result" onClick={() => props.onLoadFromInput(c.name)} title={c.name}>
+                      {!failedCompoundThumbnails.has(c.name) && (
+                        <img
+                          className="search-result__thumb search-result__thumb--compound"
+                          src={c.thumbnailUrl}
+                          alt=""
+                          loading="lazy"
+                          onError={() => setFailedCompoundThumbnails((prev) => new Set(prev).add(c.name))}
+                        />
+                      )}
+                      <div className="search-result__text">
+                        <span className="search-result__title">{c.name}</span>
                       </div>
                     </button>
                   </li>
@@ -459,6 +518,24 @@ function InfoPanel({ modelInfo }: { modelInfo: ModelInfo }) {
             <li className="info-list__wide">
               <span>이름</span>
               <strong>{modelInfo.metadata.title}</strong>
+            </li>
+          )}
+          {modelInfo.compound?.molecularFormula && (
+            <li>
+              <span>분자식</span>
+              <strong>{modelInfo.compound.molecularFormula}</strong>
+            </li>
+          )}
+          {modelInfo.compound?.molecularWeight != null && (
+            <li>
+              <span>분자량</span>
+              <strong>{modelInfo.compound.molecularWeight.toFixed(2)} g/mol</strong>
+            </li>
+          )}
+          {modelInfo.compound?.iupacName && (
+            <li className="info-list__wide">
+              <span>IUPAC 이름</span>
+              <strong>{modelInfo.compound.iupacName}</strong>
             </li>
           )}
           {modelInfo.metadata.organism && (

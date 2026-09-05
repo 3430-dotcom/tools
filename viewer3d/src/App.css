@@ -396,6 +396,16 @@
   display: block;
 }
 
+/* PubChem's 2D structure images are line drawings on a light background,
+   unlike RCSB's photographic renders -- fit the whole diagram (don't crop
+   it) on a white backing so it stays legible instead of getting swallowed
+   by the dark card background. */
+.search-result__thumb--compound {
+  object-fit: contain;
+  background: #fff;
+  padding: 6px;
+}
+
 .search-result__text {
   display: flex;
   align-items: baseline;

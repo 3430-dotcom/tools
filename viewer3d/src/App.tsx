@@ -112,6 +112,7 @@ function App() {
           onLoadSample={loadSampleUrl}
           onLoadFromInput={loadFromInput}
           searchResults={viewer.searchResults}
+          compoundResults={viewer.compoundResults}
           searching={viewer.searching}
           onSearch={viewer.searchPDBByName}
           onResetView={viewer.resetView}

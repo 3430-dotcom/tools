@@ -86,6 +86,8 @@ export function useThreeViewer() {
   const [axisState, setAxisStateState] = useState<Record<Axis, AxisState>>(defaultAxisState())
   const [renderMode, setRenderModeState] = useState<PDBRenderMode>('spacefill')
   const [colorMode, setColorModeState] = useState<PDBColorMode>('element')
+  const [structureOverlay, setStructureOverlayState] = useState(false)
+  const [showAtomLabels, setShowAtomLabelsState] = useState(false)
   const [wireframe, setWireframeState] = useState(false)
   const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
@@ -194,6 +196,12 @@ export function useThreeViewer() {
         pdbModelRef.current = model
         stlModelRef.current = null
         setColorModeState('element')
+        // A new model's own render-mode capability (protein backbone or
+        // not) may differ completely from the previous one's, so these
+        // compound-only toggles reset rather than carrying over a state
+        // that might not even apply to what just loaded.
+        setStructureOverlayState(false)
+        setShowAtomLabelsState(false)
         const materials = model.group.children
           .filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
           .map((c) => c.material as THREE.Material)
@@ -208,6 +216,7 @@ export function useThreeViewer() {
           metadata: model.metadata,
           hasCartoon: model.hasCartoon,
           chainColors: model.chainColors,
+          functionalGroupCounts: model.functionalGroupCounts,
           ...(compoundInfo ? { compound: compoundInfo } : {}),
         })
         setStatus(null)
@@ -422,6 +431,26 @@ export function useThreeViewer() {
     setSearching(false)
   }, [])
 
+  /**
+   * The one entry point behind the single search box: a PDB ID or a URL
+   * names exactly one thing, so it loads straight away, while anything else
+   * is a name to look up across both databases. Keeping that decision here
+   * rather than in the sidebar means the ID/URL patterns stay in one place,
+   * next to the loaders that actually act on them.
+   */
+  const submitQuery = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim()
+      if (!trimmed) return
+      if (/^https?:\/\//i.test(trimmed) || /^[0-9][a-zA-Z0-9]{3}$/.test(trimmed)) {
+        await loadFromInput(trimmed)
+      } else {
+        await searchPDBByName(trimmed)
+      }
+    },
+    [loadFromInput, searchPDBByName],
+  )
+
   const setAxis = useCallback(
     (axis: Axis, patch: Partial<AxisState>) => {
       const next = { ...axisStateRef.current, [axis]: { ...axisStateRef.current[axis], ...patch } }
@@ -476,6 +505,18 @@ export function useThreeViewer() {
     if (model && crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
   }, [])
 
+  /** Compound-only "spacefill + skeleton" overlay -- see PDBModel.setStructureOverlay. */
+  const setStructureOverlay = useCallback((value: boolean) => {
+    setStructureOverlayState(value)
+    pdbModelRef.current?.setStructureOverlay(value)
+  }, [])
+
+  /** Compound-only element-symbol atom labels -- see PDBModel.setShowAtomLabels. */
+  const setShowAtomLabels = useCallback((value: boolean) => {
+    setShowAtomLabelsState(value)
+    pdbModelRef.current?.setShowAtomLabels(value)
+  }, [])
+
   const setWireframe = useCallback((value: boolean) => {
     setWireframeState(value)
     const mat = stlModelRef.current?.mesh.material as THREE.MeshStandardMaterial | undefined
@@ -513,6 +554,11 @@ export function useThreeViewer() {
   }, [])
 
   const screenshot = useCallback(() => sceneRef.current?.screenshot() ?? null, [])
+
+  /** Moves the view position (see SceneManager.panView) -- driven by the dedicated pan widget rather than the main viewport, which stays rotate-only. */
+  const panView = useCallback((deltaX: number, deltaY: number) => {
+    sceneRef.current?.panView(deltaX, deltaY)
+  }, [])
 
   /** Picks whichever of an atom or a bond is closer to the camera under this viewport coordinate. */
   // The disc caps read each atom's highlight state at recompute time (see
@@ -583,6 +629,51 @@ export function useThreeViewer() {
 
   /**
    * If this viewport coordinate hits one of the currently-enabled axes' cut
+   * planes (and isn't actually closer to the model's own surface -- see
+   * below), returns which axis; otherwise null. Shared by startPlaneDrag
+   * (which acts on it) and isOverPlaneHandle (which just wants to know for
+   * cursor feedback), so the two never disagree about what counts as a hit.
+   */
+  const hitPlaneHandle = useCallback((clientX: number, clientY: number): Axis | null => {
+    const manager = sceneRef.current
+    const cs = crossSectionRef.current
+    if (!manager || !cs) return null
+
+    const state = axisStateRef.current
+    const enabledAxes = AXES.filter((a) => state[a].enabled)
+    if (enabledAxes.length === 0) return null
+
+    const hit = manager.pickObject(
+      clientX,
+      clientY,
+      enabledAxes.map((a) => cs.dragHandles[a]),
+    )
+    if (!hit) return null
+    const axis = enabledAxes.find((a) => cs.dragHandles[a] === hit.object)
+    if (!axis) return null
+
+    // The visible cut face sits exactly where the plane handle is, but an
+    // atom/bond's own (clip-invisible) near surface still extends past it
+    // toward the camera -- so if the model itself is at least as close,
+    // this point was meant to pick that, not grab the plane.
+    const solidMeshes: THREE.Object3D[] = pdbModelRef.current
+      ? [pdbModelRef.current.atomMesh, pdbModelRef.current.bondMesh]
+      : stlModelRef.current
+        ? [stlModelRef.current.mesh]
+        : []
+    if (solidMeshes.length > 0) {
+      const solidDistance = manager.nearestHitDistance(clientX, clientY, solidMeshes)
+      if (solidDistance !== null && solidDistance <= hit.distance) return null
+    }
+
+    return axis
+  }, [])
+
+  /** Whether this viewport coordinate is currently over a draggable cut-plane handle -- purely a hover query (no side effects), for showing a "this will move the plane" cursor before the user commits to a drag. */
+  const isOverPlaneHandle = useCallback((clientX: number, clientY: number): boolean => hitPlaneHandle(clientX, clientY) !== null, [hitPlaneHandle])
+
+  /**
+   * If this viewport coordinate hits one of the currently-enabled axes' cut
    * planes, starts dragging that plane's offset and returns true (so the
    * caller can skip its usual click/orbit handling for this gesture).
    *
@@ -601,33 +692,10 @@ export function useThreeViewer() {
     const cs = crossSectionRef.current
     if (!manager || !cs) return false
 
-    const state = axisStateRef.current
-    const enabledAxes = AXES.filter((a) => state[a].enabled)
-    if (enabledAxes.length === 0) return false
-
-    const hit = manager.pickObject(
-      clientX,
-      clientY,
-      enabledAxes.map((a) => cs.dragHandles[a]),
-    )
-    if (!hit) return false
-    const axis = enabledAxes.find((a) => cs.dragHandles[a] === hit.object)
+    const axis = hitPlaneHandle(clientX, clientY)
     if (!axis) return false
 
-    // The visible cut face sits exactly where the plane handle is, but an
-    // atom/bond's own (clip-invisible) near surface still extends past it
-    // toward the camera -- so if the model itself is at least as close,
-    // this pointerdown was meant to pick that, not grab the plane.
-    const solidMeshes: THREE.Object3D[] = pdbModelRef.current
-      ? [pdbModelRef.current.atomMesh, pdbModelRef.current.bondMesh]
-      : stlModelRef.current
-        ? [stlModelRef.current.mesh]
-        : []
-    if (solidMeshes.length > 0) {
-      const solidDistance = manager.nearestHitDistance(clientX, clientY, solidMeshes)
-      if (solidDistance !== null && solidDistance <= hit.distance) return false
-    }
-
+    const state = axisStateRef.current
     const radius = radiusRef.current
     const moveDir = AXIS_NORMALS[axis].clone().negate()
     const startOffset = state[axis].offset
@@ -653,7 +721,7 @@ export function useThreeViewer() {
     }
     manager.controls.enabled = false
     return true
-  }, [])
+  }, [hitPlaneHandle])
 
   const updatePlaneDrag = useCallback(
     (clientX: number, clientY: number) => {
@@ -688,6 +756,10 @@ export function useThreeViewer() {
     setRenderMode,
     colorMode,
     setColorMode,
+    structureOverlay,
+    setStructureOverlay,
+    showAtomLabels,
+    setShowAtomLabels,
     wireframe,
     setWireframe,
     autoRotate,
@@ -704,15 +776,17 @@ export function useThreeViewer() {
     searchResults,
     compoundResults,
     searching,
-    searchPDBByName,
+    submitQuery,
     selection,
     pickTarget,
     clearSelection,
     getScreenPosition,
     startPlaneDrag,
+    isOverPlaneHandle,
     updatePlaneDrag,
     endPlaneDrag,
     resetView,
     screenshot,
+    panView,
   }
 }

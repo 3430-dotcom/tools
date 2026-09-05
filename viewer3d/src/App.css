@@ -15,7 +15,9 @@
 }
 
 .menu-toggle {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   flex-shrink: 0;
@@ -79,34 +81,11 @@
   display: none;
 }
 
-.sidebar-collapse-btn {
-  display: none;
-}
-
-/* ---------- desktop: whole-sidebar collapse (separate from the mobile
-   drawer below) so a small viewport for cross-section work doesn't have to
-   fight the sidebar for space ---------- */
+/* ---------- desktop: the header hamburger collapses the whole sidebar, so a
+   small viewport for cross-section work doesn't have to fight it for
+   space ---------- */
 
 @media (min-width: 861px) {
-  .sidebar-collapse-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    flex-shrink: 0;
-    border: none;
-    border-right: 1px solid #1f2330;
-    background: #12141c;
-    color: #6f7690;
-    cursor: pointer;
-    font-size: 12px;
-  }
-
-  .sidebar-collapse-btn:hover {
-    background: #171b28;
-    color: #e8eaf0;
-  }
-
   .sidebar--collapsed {
     width: 0;
     padding: 0;
@@ -115,15 +94,10 @@
   }
 }
 
-/* ---------- mobile: sidebar becomes a slide-in drawer over the canvas ---------- */
+/* ---------- mobile: the same hamburger instead opens/closes a slide-in
+   drawer over the canvas ---------- */
 
 @media (max-width: 860px) {
-  .menu-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   .brand h1 {
     font-size: 15px;
   }
@@ -613,6 +587,14 @@
   display: block;
 }
 
+/* Hovering a cut-plane's drag handle: signal "dragging here moves the plane"
+   before the drag starts, so it reads as a distinct gesture from orbiting
+   the view (see isOverPlaneHandle in useThreeViewer). */
+.canvas-host--plane-hover,
+.canvas-host--plane-hover canvas {
+  cursor: move;
+}
+
 .empty-state {
   position: absolute;
   inset: 0;
@@ -629,6 +611,35 @@
   font-size: 14px;
   max-width: 360px;
   line-height: 1.6;
+}
+
+/* Corner widget for moving the view position (see panView in SceneManager).
+   Deliberately separate from the main viewport, which stays rotate-only on
+   left-drag -- trackpad-only users (no reliable right-click-drag) still
+   need some way to pan, so it lives here instead of behind a mouse button. */
+.view-pan-widget {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(19, 23, 34, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #c9cde0;
+  backdrop-filter: blur(6px);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.view-pan-widget:hover {
+  background: rgba(19, 23, 34, 0.92);
+  color: #f4f6fb;
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .status-toast {

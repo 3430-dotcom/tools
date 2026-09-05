@@ -19,31 +19,30 @@ const FALLBACK_DIR = { x: 0.6, y: -0.8 } // up-right, used when the pick is near
 const EDGE_MARGIN = 8
 
 /**
- * Floats the picked atom/bond's info next to its own position in the 3D
- * view instead of a fixed viewport corner, connected by a small leader
- * line. The world position never changes after picking (the model itself
- * never moves), so only the *screen* position needs updating -- this
- * re-projects it every animation frame to track camera orbit/zoom, writing
- * directly to DOM refs rather than React state so following the camera
- * stays smooth and doesn't re-render the rest of the app 60 times a second.
+ * Floats the picked atom/bond's info near its position in the 3D view,
+ * connected by a small leader line to a dot that re-projects every frame to
+ * track the atom through camera orbit/zoom (writing directly to DOM refs
+ * rather than React state so this stays smooth at 60fps). The card itself,
+ * though, is placed once -- picked radially away from viewport center on
+ * the atom's initial screen position, or wherever the user last dragged it
+ * -- and then left alone, so orbiting the view doesn't drag the card around
+ * with it; only the line's far end follows the dot.
  */
 export function AtomAnnotation({ selection, getScreenPosition, onClose }: Props) {
   const dotRef = useRef<HTMLDivElement | null>(null)
   const labelRef = useRef<HTMLDivElement | null>(null)
   const lineRef = useRef<SVGLineElement | null>(null)
 
-  // Offset (in px, relative to the atom's own screen position) the label is
-  // currently drawn at. Auto-computed every frame (radially away from
-  // viewport center) until the user drags the card, at which point the drag
-  // takes over as the source of truth; either way this ref always holds the
-  // last *rendered* offset, which a new drag starts from. Resets to
-  // auto-placement whenever a new atom/bond is picked.
-  const offsetRef = useRef({ x: 0, y: 0 })
-  const manualOffsetRef = useRef<{ x: number; y: number } | null>(null)
+  // The label's absolute on-screen position. Computed once (radially away
+  // from viewport center, based on the atom's screen position at that
+  // moment) the first time a newly-picked atom/bond becomes visible, or set
+  // directly by a drag; either way it then stays put regardless of camera
+  // movement until the next pick resets it.
+  const labelPosRef = useRef<{ x: number; y: number } | null>(null)
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; baseX: number; baseY: number } | null>(null)
 
   useEffect(() => {
-    manualOffsetRef.current = null
+    labelPosRef.current = null
   }, [selection])
 
   useEffect(() => {
@@ -62,29 +61,22 @@ export function AtomAnnotation({ selection, getScreenPosition, onClose }: Props)
           line.style.opacity = '0'
         } else {
           const container = dot.parentElement
-          let ox: number
-          let oy: number
-          if (manualOffsetRef.current) {
-            ox = manualOffsetRef.current.x
-            oy = manualOffsetRef.current.y
-          } else {
+          if (!labelPosRef.current) {
             const cx = container ? container.clientWidth / 2 : screen.x
             const cy = container ? container.clientHeight / 2 : screen.y
             const dx = screen.x - cx
             const dy = screen.y - cy
             const centerDist = Math.hypot(dx, dy)
             const dir = centerDist < CENTER_DEAD_ZONE ? FALLBACK_DIR : { x: dx / centerDist, y: dy / centerDist }
-            ox = dir.x * OFFSET_DISTANCE
-            oy = dir.y * OFFSET_DISTANCE
+            let lx = screen.x + dir.x * OFFSET_DISTANCE
+            let ly = screen.y + dir.y * OFFSET_DISTANCE
+            if (container) {
+              lx = Math.min(Math.max(lx, EDGE_MARGIN), container.clientWidth - label.offsetWidth - EDGE_MARGIN)
+              ly = Math.min(Math.max(ly, EDGE_MARGIN), container.clientHeight - label.offsetHeight - EDGE_MARGIN)
+            }
+            labelPosRef.current = { x: lx, y: ly }
           }
-
-          let lx = screen.x + ox
-          let ly = screen.y + oy
-          if (container) {
-            lx = Math.min(Math.max(lx, EDGE_MARGIN), container.clientWidth - label.offsetWidth - EDGE_MARGIN)
-            ly = Math.min(Math.max(ly, EDGE_MARGIN), container.clientHeight - label.offsetHeight - EDGE_MARGIN)
-          }
-          offsetRef.current = { x: lx - screen.x, y: ly - screen.y }
+          const { x: lx, y: ly } = labelPosRef.current
 
           dot.style.opacity = '1'
           dot.style.transform = `translate(${screen.x}px, ${screen.y}px)`
@@ -108,12 +100,13 @@ export function AtomAnnotation({ selection, getScreenPosition, onClose }: Props)
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('.atom-annotation__close')) return
     labelRef.current?.setPointerCapture(e.pointerId)
-    dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, baseX: offsetRef.current.x, baseY: offsetRef.current.y }
+    const base = labelPosRef.current ?? { x: 0, y: 0 }
+    dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, baseX: base.x, baseY: base.y }
   }
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== e.pointerId) return
-    manualOffsetRef.current = { x: drag.baseX + (e.clientX - drag.startX), y: drag.baseY + (e.clientY - drag.startY) }
+    labelPosRef.current = { x: drag.baseX + (e.clientX - drag.startX), y: drag.baseY + (e.clientY - drag.startY) }
   }
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null

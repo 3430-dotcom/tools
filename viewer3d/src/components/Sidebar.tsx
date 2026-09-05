@@ -127,14 +127,13 @@ interface SidebarProps {
   searchResults: PDBSearchResult[]
   compoundResults: PubchemSearchResult[]
   searching: boolean
-  onSearch: (query: string) => void
+  onSubmitQuery: (query: string) => void
   onResetView: () => void
   onScreenshot: () => void
 }
 
 export function Sidebar(props: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [idOrUrl, setIdOrUrl] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   // Thumbnails that failed to load (RCSB doesn't have an image for every
   // entry) -- tracked so that one broken image cleanly falls back to the
@@ -153,14 +152,17 @@ export function Sidebar(props: SidebarProps) {
     if (props.compoundResults.length > 0) setCompoundResultsOpen(true)
   }, [props.compoundResults])
   const [failedCompoundThumbnails, setFailedCompoundThumbnails] = useState<Set<string>>(new Set())
-  const [pdbSamplesOpen, setPdbSamplesOpen] = useState(true)
+  // Collapsed by default: the samples are a starting point for someone with
+  // nothing loaded yet, not something to keep in the way of the search box
+  // above every result list.
+  const [pdbSamplesOpen, setPdbSamplesOpen] = useState(false)
   const [colorLegendOpen, setColorLegendOpen] = useState(true)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestions = matchingSuggestions(searchQuery)
 
-  const runSearch = (query: string) => {
+  const submit = (query: string) => {
     setShowSuggestions(false)
-    props.onSearch(query)
+    props.onSubmitQuery(query)
   }
 
   return (
@@ -182,24 +184,26 @@ export function Sidebar(props: SidebarProps) {
           }}
         />
 
-        <div className="pdb-id-row">
-          <input
-            className="text-input"
-            value={idOrUrl}
-            onChange={(e) => setIdOrUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}
-            placeholder="예: 1CRN, dibutyl phthalate, https://.../model.stl"
-          />
-          <button className="btn" onClick={() => idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}>
-            불러오기
+        <div className="sample-group">
+          <button
+            type="button"
+            className="collapsible-toggle"
+            onClick={() => setPdbSamplesOpen((v) => !v)}
+            aria-expanded={pdbSamplesOpen}
+          >
+            <span>샘플 분자</span>
+            <span className="collapsible-toggle__chevron">{pdbSamplesOpen ? '▾' : '▸'}</span>
           </button>
+          {pdbSamplesOpen && (
+            <div className="chip-row">
+              {PDB_SAMPLES.map((s) => (
+                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb')}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <p className="hint">
-          PDB ID(4자리, 예: 1CRN)를 입력하면 RCSB 단백질 데이터뱅크에서 바로 불러옵니다. RCSB는 단백질 등 거대분자만
-          다루므로, 그 외의 일반 화합물(예: dibutyl phthalate)은 영문 이름을 입력하면 PubChem에서 대신 찾아옵니다.
-          또는 .pdb/.stl 파일을 직접 가리키는 URL을 붙여넣으세요 (예: NASA 3D Resources, GitHub 등). 사이트가 CORS를
-          막아두면 실패할 수 있어요 — 그럴 땐 파일을 받아서 "파일 열기"로 올려주세요.
-        </p>
 
         <div className="pdb-id-row">
           <div className="search-input-wrap">
@@ -212,8 +216,8 @@ export function Sidebar(props: SidebarProps) {
               }}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setShowSuggestions(false)}
-              onKeyDown={(e) => e.key === 'Enter' && runSearch(searchQuery)}
-              placeholder="영문으로 검색, 예: hemoglobin"
+              onKeyDown={(e) => e.key === 'Enter' && submit(searchQuery)}
+              placeholder="이름·PDB ID·URL (예: aspirin, 1CRN)"
             />
             {showSuggestions && suggestions.length > 0 && (
               <ul className="search-suggestions">
@@ -224,7 +228,7 @@ export function Sidebar(props: SidebarProps) {
                       type="button"
                       onMouseDown={() => {
                         setSearchQuery(s.en)
-                        runSearch(s.en)
+                        submit(s.en)
                       }}
                     >
                       <span className="search-suggestions__ko">{s.ko}</span>
@@ -235,16 +239,16 @@ export function Sidebar(props: SidebarProps) {
               </ul>
             )}
           </div>
-          <button className="btn" onClick={() => runSearch(searchQuery)} disabled={props.searching}>
+          <button className="btn" onClick={() => submit(searchQuery)} disabled={props.searching}>
             {props.searching ? '검색 중…' : '검색'}
           </button>
         </div>
         <p className="hint">
-          단백질/분자의 <strong>영문 이름</strong>으로 검색하세요 (예: hemoglobin, insulin, alcohol dehydrogenase, aspirin).
-          RCSB와 PubChem을 함께 검색해서 결과를 따로 보여드려요 — 같은 이름이어도 둘은 서로 다른 걸 뜻해요: RCSB는{' '}
-          <strong>그 화합물이 결합된 단백질</strong>을, PubChem은 <strong>그 화합물 자체</strong>를 보여줍니다. 둘 다
-          영문 데이터베이스라 한글 검색어는 결과가 나오지 않습니다 — 한글로 입력하면 아는 이름의 영문 검색어를
-          추천해드려요.
+          이름으로 검색하면 RCSB와 PubChem을 함께 찾아 결과를 따로 보여드려요 — 같은 이름이어도 둘은 서로 다른 걸
+          뜻해요: RCSB는 <strong>그 화합물이 결합된 단백질</strong>을, PubChem은 <strong>그 화합물 자체</strong>를
+          보여줍니다. 둘 다 영문 데이터베이스라 한글 검색어는 결과가 나오지 않아요 (한글로 입력하면 영문 검색어를
+          추천해드려요). <strong>PDB ID</strong>(4자리, 예: 1CRN)나 .pdb/.sdf/.stl 파일의 <strong>URL</strong>을 넣으면
+          검색 없이 바로 불러옵니다.
         </p>
         {props.searchResults.length > 0 && (
           <>
@@ -324,27 +328,6 @@ export function Sidebar(props: SidebarProps) {
             )}
           </>
         )}
-
-        <div className="sample-group">
-          <button
-            type="button"
-            className="collapsible-toggle"
-            onClick={() => setPdbSamplesOpen((v) => !v)}
-            aria-expanded={pdbSamplesOpen}
-          >
-            <span>단백질 샘플</span>
-            <span className="collapsible-toggle__chevron">{pdbSamplesOpen ? '▾' : '▸'}</span>
-          </button>
-          {pdbSamplesOpen && (
-            <div className="chip-row">
-              {PDB_SAMPLES.map((s) => (
-                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb')}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </section>
 
       {props.modelKind === 'pdb' && (

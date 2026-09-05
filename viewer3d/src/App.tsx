@@ -14,11 +14,12 @@ function download(dataUrl: string, filename: string) {
 function App() {
   const viewer = useThreeViewer()
   const [dragOver, setDragOver] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  // Desktop-only "collapse the whole sidebar" toggle -- separate from
-  // sidebarOpen, which drives the mobile slide-in drawer below the 860px
-  // breakpoint and must keep working independently of this.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // One toggle for the whole app: below the 860px breakpoint it's a slide-in
+  // drawer over the canvas (starts closed, since the canvas should own the
+  // small screen by default); above it, it collapses the sidebar to make
+  // room for the viewport (starts open, matching the old always-visible
+  // desktop sidebar). The hamburger button in the header drives both.
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860)
   const [hintVisible, setHintVisible] = useState(false)
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const draggingPlane = useRef(false)
@@ -46,24 +47,40 @@ function App() {
 
   // On mobile the sidebar is a drawer over the canvas -- close it once a
   // model actually starts loading so the result is immediately visible.
+  // Above the 860px breakpoint sidebarOpen instead controls the desktop
+  // collapse, which a load shouldn't touch.
+  const closeMobileDrawer = () => {
+    if (window.innerWidth <= 860) setSidebarOpen(false)
+  }
   const loadFile = useCallback(
     (file: File) => {
       viewer.loadFile(file)
-      setSidebarOpen(false)
+      closeMobileDrawer()
     },
     [viewer],
   )
   const loadSampleUrl = useCallback(
     (url: string, kind: 'pdb' | 'stl') => {
       viewer.loadSampleUrl(url, kind)
-      setSidebarOpen(false)
+      closeMobileDrawer()
     },
     [viewer],
   )
   const loadFromInput = useCallback(
     (value: string) => {
       viewer.loadFromInput(value)
-      setSidebarOpen(false)
+      closeMobileDrawer()
+    },
+    [viewer],
+  )
+  const submitQuery = useCallback(
+    (value: string) => {
+      viewer.submitQuery(value)
+      // A PDB ID or URL resolves to a direct load (see useThreeViewer's
+      // submitQuery); a name search instead populates the results list,
+      // which needs the drawer to stay open to be seen.
+      const trimmed = value.trim()
+      if (/^https?:\/\//i.test(trimmed) || /^[0-9][a-zA-Z0-9]{3}$/.test(trimmed)) closeMobileDrawer()
     },
     [viewer],
   )
@@ -89,7 +106,7 @@ function App() {
 
       <main className="app-body">
         <Sidebar
-          className={`${sidebarOpen ? 'sidebar--open' : ''} ${sidebarCollapsed ? 'sidebar--collapsed' : ''}`}
+          className={sidebarOpen ? 'sidebar--open' : 'sidebar--collapsed'}
           modelKind={viewer.modelKind}
           modelInfo={viewer.modelInfo}
           axisState={viewer.axisState}
@@ -114,22 +131,13 @@ function App() {
           searchResults={viewer.searchResults}
           compoundResults={viewer.compoundResults}
           searching={viewer.searching}
-          onSearch={viewer.searchPDBByName}
+          onSubmitQuery={submitQuery}
           onResetView={viewer.resetView}
           onScreenshot={() => {
             const data = viewer.screenshot()
             if (data) download(data, `viewer3d-${Date.now()}.png`)
           }}
         />
-
-        <button
-          type="button"
-          className="sidebar-collapse-btn"
-          aria-label={sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
-          onClick={() => setSidebarCollapsed((v) => !v)}
-        >
-          {sidebarCollapsed ? '▸' : '◂'}
-        </button>
 
         <div
           className={`sidebar-backdrop ${sidebarOpen ? 'sidebar-backdrop--visible' : ''}`}
@@ -158,13 +166,22 @@ function App() {
               if (draggingPlane.current) e.currentTarget.setPointerCapture(e.pointerId)
             }}
             onPointerMove={(e) => {
-              if (draggingPlane.current) viewer.updatePlaneDrag(e.clientX, e.clientY)
+              if (draggingPlane.current) {
+                viewer.updatePlaneDrag(e.clientX, e.clientY)
+                return
+              }
+              // Hovering a cut-plane handle gets its own cursor so dragging
+              // doesn't come as a surprise to someone expecting to orbit the
+              // view instead -- toggled via className directly (not React
+              // state) so this doesn't re-render on every mouse move.
+              e.currentTarget.classList.toggle('canvas-host--plane-hover', viewer.isOverPlaneHandle(e.clientX, e.clientY))
             }}
             onPointerUp={(e) => {
               if (draggingPlane.current) {
                 draggingPlane.current = false
                 pointerDownPos.current = null
                 viewer.endPlaneDrag()
+                e.currentTarget.classList.toggle('canvas-host--plane-hover', viewer.isOverPlaneHandle(e.clientX, e.clientY))
                 return
               }
               const down = pointerDownPos.current
@@ -175,12 +192,16 @@ function App() {
                 viewer.pickTarget(e.clientX, e.clientY)
               }
             }}
-            onPointerCancel={() => {
+            onPointerCancel={(e) => {
               if (draggingPlane.current) {
                 draggingPlane.current = false
                 viewer.endPlaneDrag()
               }
               pointerDownPos.current = null
+              e.currentTarget.classList.remove('canvas-host--plane-hover')
+            }}
+            onPointerLeave={(e) => {
+              if (!draggingPlane.current) e.currentTarget.classList.remove('canvas-host--plane-hover')
             }}
           />
 

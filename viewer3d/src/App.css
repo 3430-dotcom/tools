@@ -15,7 +15,9 @@
 }
 
 .menu-toggle {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   flex-shrink: 0;
@@ -79,34 +81,11 @@
   display: none;
 }
 
-.sidebar-collapse-btn {
-  display: none;
-}
-
-/* ---------- desktop: whole-sidebar collapse (separate from the mobile
-   drawer below) so a small viewport for cross-section work doesn't have to
-   fight the sidebar for space ---------- */
+/* ---------- desktop: the header hamburger collapses the whole sidebar, so a
+   small viewport for cross-section work doesn't have to fight it for
+   space ---------- */
 
 @media (min-width: 861px) {
-  .sidebar-collapse-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    flex-shrink: 0;
-    border: none;
-    border-right: 1px solid #1f2330;
-    background: #12141c;
-    color: #6f7690;
-    cursor: pointer;
-    font-size: 12px;
-  }
-
-  .sidebar-collapse-btn:hover {
-    background: #171b28;
-    color: #e8eaf0;
-  }
-
   .sidebar--collapsed {
     width: 0;
     padding: 0;
@@ -115,15 +94,10 @@
   }
 }
 
-/* ---------- mobile: sidebar becomes a slide-in drawer over the canvas ---------- */
+/* ---------- mobile: the same hamburger instead opens/closes a slide-in
+   drawer over the canvas ---------- */
 
 @media (max-width: 860px) {
-  .menu-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   .brand h1 {
     font-size: 15px;
   }
@@ -611,6 +585,14 @@
 
 .canvas-host canvas {
   display: block;
+}
+
+/* Hovering a cut-plane's drag handle: signal "dragging here moves the plane"
+   before the drag starts, so it reads as a distinct gesture from orbiting
+   the view (see isOverPlaneHandle in useThreeViewer). */
+.canvas-host--plane-hover,
+.canvas-host--plane-hover canvas {
+  cursor: move;
 }
 
 .empty-state {

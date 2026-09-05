@@ -1,3 +1,5 @@
+import { buildAtomLine } from './legacyPdbText'
+
 /**
  * Minimal mmCIF `_atom_site` loop reader, converted into synthetic
  * fixed-column legacy-PDB ATOM/HETATM text -- so the rest of the app
@@ -122,51 +124,4 @@ function tokenizeCifRow(line: string): string[] {
     }
   }
   return tokens
-}
-
-function rjust(text: string, width: number): string {
-  return text.length >= width ? text.slice(text.length - width) : text.padStart(width)
-}
-
-function ljust(text: string, width: number): string {
-  return text.length >= width ? text.slice(0, width) : text.padEnd(width)
-}
-
-/** Formats a coordinate to fit the narrow 7-char field three.js's PDBLoader actually reads (see pdb.ts's fetchPDBById comment), reducing decimal places rather than truncating digits off a huge value. */
-function fitCoord(v: number): string {
-  if (!Number.isFinite(v)) return '0'.padStart(7)
-  for (const dp of [3, 2, 1, 0]) {
-    const s = v.toFixed(dp)
-    if (s.length <= 7) return s
-  }
-  return v.toFixed(0).slice(0, 7)
-}
-
-function buildAtomLine(
-  serial: number,
-  group: string,
-  atomName: string,
-  resName: string,
-  resSeq: number,
-  x: number,
-  y: number,
-  z: number,
-  element: string,
-): string {
-  const record = group.toUpperCase() === 'HETATM' ? 'HETATM' : 'ATOM  '
-  const chars = new Array(80).fill(' ')
-  const put = (start: number, text: string) => {
-    for (let k = 0; k < text.length; k++) chars[start + k] = text[k]
-  }
-  put(0, record)
-  put(6, rjust(String(serial % 100000), 5))
-  put(12, ljust(atomName.slice(0, 4), 4))
-  put(17, ljust(resName.slice(0, 3), 3))
-  put(21, 'A')
-  put(22, rjust(String(resSeq), 4))
-  put(30, rjust(fitCoord(x), 7))
-  put(38, rjust(fitCoord(y), 7))
-  put(46, rjust(fitCoord(z), 7))
-  put(76, rjust(element.slice(0, 2), 2))
-  return chars.join('')
 }

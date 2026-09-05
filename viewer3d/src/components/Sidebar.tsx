@@ -513,69 +513,76 @@ function InfoPanel({ modelInfo }: { modelInfo: ModelInfo }) {
     <section className="panel">
       <h2>모델 정보</h2>
       {modelInfo.kind === 'pdb' ? (
-        <ul className="info-list">
-          {modelInfo.metadata.title && (
+        <>
+          <ul className="info-list">
+            {modelInfo.metadata.title && (
+              <li className="info-list__wide">
+                <span>이름</span>
+                <strong>{modelInfo.metadata.title}</strong>
+              </li>
+            )}
+            {modelInfo.compound?.molecularFormula && (
+              <li>
+                <span>분자식</span>
+                <strong>{modelInfo.compound.molecularFormula}</strong>
+              </li>
+            )}
+            {modelInfo.compound?.molecularWeight != null && (
+              <li>
+                <span>분자량</span>
+                <strong>{modelInfo.compound.molecularWeight.toFixed(2)} g/mol</strong>
+              </li>
+            )}
+            {modelInfo.compound?.iupacName && (
+              <li className="info-list__wide">
+                <span>IUPAC 이름</span>
+                <strong>{modelInfo.compound.iupacName}</strong>
+              </li>
+            )}
+            {modelInfo.metadata.organism && (
+              <li className="info-list__wide">
+                <span>생물종</span>
+                <strong>{modelInfo.metadata.organism}</strong>
+              </li>
+            )}
+            {modelInfo.metadata.method && (
+              <li>
+                <span>실험 방법</span>
+                <strong>{modelInfo.metadata.method}</strong>
+              </li>
+            )}
+            {(modelInfo.metadata.helixCount > 0 || modelInfo.metadata.sheetCount > 0) && (
+              <li>
+                <span>2차 구조</span>
+                <strong>
+                  나선 {modelInfo.metadata.helixCount} · 시트 {modelInfo.metadata.sheetCount}
+                </strong>
+              </li>
+            )}
+            <li>
+              <span>원자 수</span>
+              <strong>{modelInfo.atomCount.toLocaleString()}</strong>
+            </li>
+            <li>
+              <span>결합 수</span>
+              <strong>{modelInfo.bondCount.toLocaleString()}</strong>
+            </li>
             <li className="info-list__wide">
-              <span>이름</span>
-              <strong>{modelInfo.metadata.title}</strong>
-            </li>
-          )}
-          {modelInfo.compound?.molecularFormula && (
-            <li>
-              <span>분자식</span>
-              <strong>{modelInfo.compound.molecularFormula}</strong>
-            </li>
-          )}
-          {modelInfo.compound?.molecularWeight != null && (
-            <li>
-              <span>분자량</span>
-              <strong>{modelInfo.compound.molecularWeight.toFixed(2)} g/mol</strong>
-            </li>
-          )}
-          {modelInfo.compound?.iupacName && (
-            <li className="info-list__wide">
-              <span>IUPAC 이름</span>
-              <strong>{modelInfo.compound.iupacName}</strong>
-            </li>
-          )}
-          {modelInfo.metadata.organism && (
-            <li className="info-list__wide">
-              <span>생물종</span>
-              <strong>{modelInfo.metadata.organism}</strong>
-            </li>
-          )}
-          {modelInfo.metadata.method && (
-            <li>
-              <span>실험 방법</span>
-              <strong>{modelInfo.metadata.method}</strong>
-            </li>
-          )}
-          {(modelInfo.metadata.helixCount > 0 || modelInfo.metadata.sheetCount > 0) && (
-            <li>
-              <span>2차 구조</span>
+              <span>구성 원소</span>
               <strong>
-                나선 {modelInfo.metadata.helixCount} · 시트 {modelInfo.metadata.sheetCount}
+                {Object.entries(modelInfo.elementCounts)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([el, count]) => `${el}×${count}`)
+                  .join('  ')}
               </strong>
             </li>
+          </ul>
+          {modelInfo.compound && !modelInfo.compound.is3d && (
+            <p className="hint">
+              PubChem에 이 화합물의 3D 구조가 없어서 2D 구조를 기반으로 평면에 가깝게 표시하고 있어요.
+            </p>
           )}
-          <li>
-            <span>원자 수</span>
-            <strong>{modelInfo.atomCount.toLocaleString()}</strong>
-          </li>
-          <li>
-            <span>결합 수</span>
-            <strong>{modelInfo.bondCount.toLocaleString()}</strong>
-          </li>
-          <li className="info-list__wide">
-            <span>구성 원소</span>
-            <strong>
-              {Object.entries(modelInfo.elementCounts)
-                .sort((a, b) => b[1] - a[1])
-                .map(([el, count]) => `${el}×${count}`)
-                .join('  ')}
-            </strong>
-          </li>
-        </ul>
+        </>
       ) : (
         <ul className="info-list">
           <li>

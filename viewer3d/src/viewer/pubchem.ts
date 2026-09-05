@@ -1,10 +1,18 @@
 import { fetchWithTimeout } from './net'
 import { sdfToLegacyPDB, looksLikeSdf } from './sdf'
+import type { BondOrderMap } from './bondOrders'
 
 const PUBCHEM_BASE = 'https://pubchem.ncbi.nlm.nih.gov/rest/pug'
 
+/** PubChem's flat 2D structure-depiction image for a compound name -- shared by the search-result thumbnails here and the StructureFormulaCard reference card, so both draw from the same URL shape. */
+export function pubchemDepictionUrl(name: string, size = 300): string {
+  return `${PUBCHEM_BASE}/compound/name/${encodeURIComponent(name)}/PNG?image_size=${size}x${size}`
+}
+
 /** Chemistry metadata PubChem provides for a compound, shown in the model info panel alongside (not instead of) the usual atom/bond breakdown. */
 export interface CompoundInfo {
+  /** The name this compound was looked up by -- the same name resolves PubChem's flat-depiction PNG (see pubchemDepictionUrl), so this doubles as the key for the StructureFormulaCard reference card. */
+  name: string
   molecularFormula: string | null
   molecularWeight: number | null
   iupacName: string | null
@@ -15,6 +23,7 @@ export interface CompoundInfo {
 export interface CompoundLookupResult {
   text: string
   info: CompoundInfo
+  bondOrders: BondOrderMap
 }
 
 /**
@@ -31,7 +40,8 @@ export interface CompoundLookupResult {
  * refusing to load).
  */
 export async function fetchCompoundByName(name: string): Promise<CompoundLookupResult> {
-  const encoded = encodeURIComponent(name.trim())
+  const trimmedName = name.trim()
+  const encoded = encodeURIComponent(trimmedName)
   if (!encoded) throw new Error('화합물 이름을 입력하세요.')
 
   let text: string | null = null
@@ -63,19 +73,21 @@ export async function fetchCompoundByName(name: string): Promise<CompoundLookupR
   // Best-effort: a compound is still loadable without this succeeding, so a
   // failure here shouldn't block the load the way a failed structure fetch
   // does above.
-  const info = await fetchCompoundProperties(encoded, is3d).catch(
-    (): CompoundInfo => ({ molecularFormula: null, molecularWeight: null, iupacName: null, is3d }),
+  const info = await fetchCompoundProperties(trimmedName, encoded, is3d).catch(
+    (): CompoundInfo => ({ name: trimmedName, molecularFormula: null, molecularWeight: null, iupacName: null, is3d }),
   )
 
-  return { text: sdfToLegacyPDB(text), info }
+  const { text: pdbText, bondOrders } = sdfToLegacyPDB(text)
+  return { text: pdbText, info, bondOrders }
 }
 
-async function fetchCompoundProperties(encodedName: string, is3d: boolean): Promise<CompoundInfo> {
+async function fetchCompoundProperties(name: string, encodedName: string, is3d: boolean): Promise<CompoundInfo> {
   const res = await fetchWithTimeout(`${PUBCHEM_BASE}/compound/name/${encodedName}/property/MolecularFormula,MolecularWeight,IUPACName/JSON`)
-  if (!res.ok) return { molecularFormula: null, molecularWeight: null, iupacName: null, is3d }
+  if (!res.ok) return { name, molecularFormula: null, molecularWeight: null, iupacName: null, is3d }
   const data = (await res.json()) as { PropertyTable?: { Properties?: Record<string, string | number>[] } }
   const props = data.PropertyTable?.Properties?.[0] ?? {}
   return {
+    name,
     molecularFormula: typeof props.MolecularFormula === 'string' ? props.MolecularFormula : null,
     molecularWeight: typeof props.MolecularWeight === 'number' ? props.MolecularWeight : Number(props.MolecularWeight) || null,
     iupacName: typeof props.IUPACName === 'string' ? props.IUPACName : null,
@@ -110,7 +122,7 @@ export async function searchCompounds(query: string): Promise<PubchemSearchResul
     return names.map((name) => ({
       kind: 'compound',
       name,
-      thumbnailUrl: `${PUBCHEM_BASE}/compound/name/${encodeURIComponent(name)}/PNG?image_size=300x300`,
+      thumbnailUrl: pubchemDepictionUrl(name),
     }))
   } catch {
     return []

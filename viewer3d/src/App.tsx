@@ -3,6 +3,7 @@ import './App.css'
 import { useThreeViewer } from './hooks/useThreeViewer'
 import { Sidebar } from './components/Sidebar'
 import { AtomAnnotation } from './components/AtomAnnotation'
+import { StructureFormulaCard } from './components/StructureFormulaCard'
 
 function download(dataUrl: string, filename: string) {
   const a = document.createElement('a')
@@ -21,6 +22,8 @@ function App() {
   // desktop sidebar). The hamburger button in the header drives both.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 860)
   const [hintVisible, setHintVisible] = useState(false)
+  const depictionName = viewer.modelInfo?.kind === 'pdb' ? viewer.modelInfo.depictionName : undefined
+  const formulaCardName = viewer.showFormulaCard ? depictionName : undefined
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null)
   const draggingPlane = useRef(false)
   const panDrag = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null)
@@ -61,8 +64,8 @@ function App() {
     [viewer],
   )
   const loadSampleUrl = useCallback(
-    (url: string, kind: 'pdb' | 'stl') => {
-      viewer.loadSampleUrl(url, kind)
+    (url: string, kind: 'pdb' | 'stl', pubchemName?: string) => {
+      viewer.loadSampleUrl(url, kind, pubchemName)
       closeMobileDrawer()
     },
     [viewer],
@@ -116,10 +119,10 @@ function App() {
           onRenderModeChange={viewer.setRenderMode}
           colorMode={viewer.colorMode}
           onColorModeChange={viewer.setColorMode}
-          structureOverlay={viewer.structureOverlay}
-          onStructureOverlayChange={viewer.setStructureOverlay}
-          showAtomLabels={viewer.showAtomLabels}
-          onShowAtomLabelsChange={viewer.setShowAtomLabels}
+          formulaOverlay={viewer.formulaOverlay}
+          onFormulaOverlayChange={viewer.setFormulaOverlay}
+          showFormulaCard={viewer.showFormulaCard}
+          onShowFormulaCardChange={viewer.setShowFormulaCard}
           wireframe={viewer.wireframe}
           onWireframeChange={viewer.setWireframe}
           autoRotate={viewer.autoRotate}
@@ -252,6 +255,10 @@ function App() {
 
           {viewer.selection && (
             <AtomAnnotation selection={viewer.selection} getScreenPosition={viewer.getScreenPosition} onClose={viewer.clearSelection} />
+          )}
+
+          {formulaCardName && (
+            <StructureFormulaCard name={formulaCardName} onClose={() => viewer.setShowFormulaCard(false)} />
           )}
 
           {!viewer.modelKind && !viewer.status && (

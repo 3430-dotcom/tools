@@ -11,13 +11,13 @@ const SAMPLE_BASE = `${import.meta.env.BASE_URL}samples/`
 
 const PDB_SAMPLES = [
   { label: '크램빈 (단백질)', url: `${SAMPLE_BASE}crambin.pdb` },
-  { label: '카페인', url: `${SAMPLE_BASE}caffeine.pdb` },
-  { label: '니코틴', url: `${SAMPLE_BASE}nicotine.pdb` },
-  { label: '콜레스테롤', url: `${SAMPLE_BASE}cholesterol.pdb` },
-  { label: '포도당', url: `${SAMPLE_BASE}glucose.pdb` },
-  { label: '아스피린', url: `${SAMPLE_BASE}aspirin.pdb` },
-  { label: '에탄올', url: `${SAMPLE_BASE}ethanol.pdb` },
-  { label: '풀러렌 (C60)', url: `${SAMPLE_BASE}buckyball.pdb` },
+  { label: '카페인', url: `${SAMPLE_BASE}caffeine.pdb`, pubchemName: 'caffeine' },
+  { label: '니코틴', url: `${SAMPLE_BASE}nicotine.pdb`, pubchemName: 'nicotine' },
+  { label: '콜레스테롤', url: `${SAMPLE_BASE}cholesterol.pdb`, pubchemName: 'cholesterol' },
+  { label: '포도당', url: `${SAMPLE_BASE}glucose.pdb`, pubchemName: 'glucose' },
+  { label: '아스피린', url: `${SAMPLE_BASE}aspirin.pdb`, pubchemName: 'aspirin' },
+  { label: '에탄올', url: `${SAMPLE_BASE}ethanol.pdb`, pubchemName: 'ethanol' },
+  { label: '풀러렌 (C60)', url: `${SAMPLE_BASE}buckyball.pdb`, pubchemName: 'buckminsterfullerene' },
 ]
 
 const AXES: Axis[] = ['x', 'y', 'z']
@@ -112,10 +112,10 @@ interface SidebarProps {
   onRenderModeChange: (mode: PDBRenderMode) => void
   colorMode: PDBColorMode
   onColorModeChange: (mode: PDBColorMode) => void
-  structureOverlay: boolean
-  onStructureOverlayChange: (v: boolean) => void
-  showAtomLabels: boolean
-  onShowAtomLabelsChange: (v: boolean) => void
+  formulaOverlay: boolean
+  onFormulaOverlayChange: (v: boolean) => void
+  showFormulaCard: boolean
+  onShowFormulaCardChange: (v: boolean) => void
   wireframe: boolean
   onWireframeChange: (v: boolean) => void
   autoRotate: boolean
@@ -127,7 +127,7 @@ interface SidebarProps {
   showCaption: boolean
   onShowCaptionChange: (v: boolean) => void
   onFile: (file: File) => void
-  onLoadSample: (url: string, kind: 'pdb' | 'stl') => void
+  onLoadSample: (url: string, kind: 'pdb' | 'stl', pubchemName?: string) => void
   onLoadFromInput: (value: string) => void
   searchResults: PDBSearchResult[]
   compoundResults: PubchemSearchResult[]
@@ -178,6 +178,10 @@ export function Sidebar(props: SidebarProps) {
   // spacefill overlay), so the render-mode card's contents differ by which
   // kind of model is actually loaded rather than showing every option always.
   const isCompound = props.modelInfo?.kind === 'pdb' && !props.modelInfo.hasCartoon
+  // A compound loaded from an uploaded file (or without a curated sample
+  // name) has no PubChem name to look up a flat depiction under -- the flat
+  // card and its checkbox simply have nothing to show in that case.
+  const depictionName = props.modelInfo?.kind === 'pdb' ? props.modelInfo.depictionName : undefined
 
   return (
     <aside className={`sidebar ${props.className ?? ''}`}>
@@ -211,7 +215,7 @@ export function Sidebar(props: SidebarProps) {
           {pdbSamplesOpen && (
             <div className="chip-row">
               {PDB_SAMPLES.map((s) => (
-                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb')}>
+                <button key={s.url} className="chip" onClick={() => props.onLoadSample(s.url, 'pdb', s.pubchemName)}>
                   {s.label}
                 </button>
               ))}
@@ -379,24 +383,35 @@ export function Sidebar(props: SidebarProps) {
 
           {isCompound && props.renderMode !== 'cartoon' && (
             <>
-              {props.renderMode === 'spacefill' && (
+              {props.renderMode === 'ball-stick' && (
+                <>
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={props.formulaOverlay}
+                      onChange={(e) => props.onFormulaOverlayChange(e.target.checked)}
+                    />
+                    구조식 겹쳐 보기 (이중결합·원소 기호)
+                  </label>
+                  {props.formulaOverlay && props.modelInfo?.kind === 'pdb' && (
+                    <p className="hint">
+                      {props.modelInfo.bondOrderSource === 'file'
+                        ? 'PubChem 원본 데이터의 실제 결합 차수를 사용했어요.'
+                        : '결합 길이로부터 결합 차수를 추정한 결과예요 (참고용).'}
+                    </p>
+                  )}
+                </>
+              )}
+              {depictionName && (
                 <label className="switch-row">
                   <input
                     type="checkbox"
-                    checked={props.structureOverlay}
-                    onChange={(e) => props.onStructureOverlayChange(e.target.checked)}
+                    checked={props.showFormulaCard}
+                    onChange={(e) => props.onShowFormulaCardChange(e.target.checked)}
                   />
-                  골격 구조 덧씌우기 (반투명 스페이스필 + Ball &amp; Stick)
+                  평면 구조식 그림
                 </label>
               )}
-              <label className="switch-row">
-                <input
-                  type="checkbox"
-                  checked={props.showAtomLabels}
-                  onChange={(e) => props.onShowAtomLabelsChange(e.target.checked)}
-                />
-                원소 기호 라벨 표시
-              </label>
             </>
           )}
 

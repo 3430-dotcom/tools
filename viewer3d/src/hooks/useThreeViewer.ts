@@ -17,6 +17,7 @@ import { parseSTL, type STLModel } from '../viewer/stl'
 import { fetchWithTimeout } from '../viewer/net'
 import { fetchCompoundByName, searchCompounds, type CompoundInfo, type PubchemSearchResult } from '../viewer/pubchem'
 import { sdfToLegacyPDB } from '../viewer/sdf'
+import type { BondOrderMap } from '../viewer/bondOrders'
 import type { ModelInfo, ModelKind } from '../types'
 
 /** True for a raw browser fetch failure (CORS block, DNS, offline) as opposed to an app-thrown error with a real message. */
@@ -86,8 +87,8 @@ export function useThreeViewer() {
   const [axisState, setAxisStateState] = useState<Record<Axis, AxisState>>(defaultAxisState())
   const [renderMode, setRenderModeState] = useState<PDBRenderMode>('spacefill')
   const [colorMode, setColorModeState] = useState<PDBColorMode>('element')
-  const [structureOverlay, setStructureOverlayState] = useState(false)
-  const [showAtomLabels, setShowAtomLabelsState] = useState(false)
+  const [formulaOverlay, setFormulaOverlayState] = useState(false)
+  const [showFormulaCard, setShowFormulaCardState] = useState(false)
   const [wireframe, setWireframeState] = useState(false)
   const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
@@ -141,6 +142,15 @@ export function useThreeViewer() {
   const showHelpersRef = useRef(showHelpers)
   showHelpersRef.current = showHelpers
 
+  // A freshly loaded model doesn't know which background the viewer was
+  // already showing -- read through this ref (rather than the `background`
+  // state directly) so loadPDBText can apply the current theme to the new
+  // model without depending on (and re-running for) every background change.
+  const backgroundRef = useRef(background)
+  useEffect(() => {
+    backgroundRef.current = background
+  }, [background])
+
   const applyClipping = useCallback((materials: THREE.Material[], state: Record<Axis, AxisState>) => {
     crossSectionRef.current?.applyTo(materials, state)
     crossSectionRef.current?.setHelpersVisible(state, showHelpersRef.current)
@@ -188,11 +198,11 @@ export function useThreeViewer() {
   )
 
   const loadPDBText = useCallback(
-    async (text: string, compoundInfo?: CompoundInfo) => {
+    async (text: string, compoundInfo?: CompoundInfo, bondOrders?: BondOrderMap, depictionName?: string) => {
       setError(null)
       setStatus('PDB 구조 분석 중...')
       try {
-        const model = await loadPDBFromText(text, renderMode)
+        const model = await loadPDBFromText(text, renderMode, bondOrders)
         pdbModelRef.current = model
         stlModelRef.current = null
         setColorModeState('element')
@@ -200,8 +210,9 @@ export function useThreeViewer() {
         // not) may differ completely from the previous one's, so these
         // compound-only toggles reset rather than carrying over a state
         // that might not even apply to what just loaded.
-        setStructureOverlayState(false)
-        setShowAtomLabelsState(false)
+        setFormulaOverlayState(false)
+        setShowFormulaCardState(false)
+        model.setFormulaTheme(backgroundRef.current)
         const materials = model.group.children
           .filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
           .map((c) => c.material as THREE.Material)
@@ -217,7 +228,9 @@ export function useThreeViewer() {
           hasCartoon: model.hasCartoon,
           chainColors: model.chainColors,
           functionalGroupCounts: model.functionalGroupCounts,
+          bondOrderSource: model.bondOrderSource,
           ...(compoundInfo ? { compound: compoundInfo } : {}),
+          ...(compoundInfo?.name ?? depictionName ? { depictionName: compoundInfo?.name ?? depictionName } : {}),
         })
         setStatus(null)
       } catch (e) {
@@ -254,8 +267,8 @@ export function useThreeViewer() {
       setError(null)
       setStatus(`PubChem에서 "${name}" 검색 중...`)
       try {
-        const { text, info } = await fetchCompoundByName(name)
-        await loadPDBText(text, info)
+        const { text, info, bondOrders } = await fetchCompoundByName(name)
+        await loadPDBText(text, info, bondOrders)
       } catch (e) {
         setError(
           isNetworkError(e)
@@ -310,7 +323,8 @@ export function useThreeViewer() {
       } else if (lower.endsWith('.sdf') || lower.endsWith('.mol')) {
         setError(null)
         try {
-          await loadPDBText(sdfToLegacyPDB(await file.text()))
+          const { text, bondOrders } = sdfToLegacyPDB(await file.text())
+          await loadPDBText(text, undefined, bondOrders)
         } catch (e) {
           setError(e instanceof Error ? e.message : 'SDF/MOL 파일을 불러오지 못했습니다.')
         }
@@ -322,7 +336,7 @@ export function useThreeViewer() {
   )
 
   const loadSampleUrl = useCallback(
-    async (url: string, kind: 'pdb' | 'stl') => {
+    async (url: string, kind: 'pdb' | 'stl', pubchemName?: string) => {
       setError(null)
       setStatus('샘플 불러오는 중...')
       try {
@@ -331,7 +345,7 @@ export function useThreeViewer() {
         if (kind === 'stl') {
           loadSTLBuffer(await res.arrayBuffer())
         } else {
-          await loadPDBText(await res.text())
+          await loadPDBText(await res.text(), undefined, undefined, pubchemName)
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : '샘플을 불러오지 못했습니다.')
@@ -505,16 +519,15 @@ export function useThreeViewer() {
     if (model && crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
   }, [])
 
-  /** Compound-only "spacefill + skeleton" overlay -- see PDBModel.setStructureOverlay. */
-  const setStructureOverlay = useCallback((value: boolean) => {
-    setStructureOverlayState(value)
-    pdbModelRef.current?.setStructureOverlay(value)
+  /** Compound-only structural-formula overlay -- see PDBModel.setFormulaOverlay. */
+  const setFormulaOverlay = useCallback((value: boolean) => {
+    setFormulaOverlayState(value)
+    pdbModelRef.current?.setFormulaOverlay(value)
   }, [])
 
-  /** Compound-only element-symbol atom labels -- see PDBModel.setShowAtomLabels. */
-  const setShowAtomLabels = useCallback((value: boolean) => {
-    setShowAtomLabelsState(value)
-    pdbModelRef.current?.setShowAtomLabels(value)
+  /** Toggles the PubChem flat-depiction reference card (see StructureFormulaCard) -- purely a UI toggle, no model-side state to drive. */
+  const setShowFormulaCard = useCallback((value: boolean) => {
+    setShowFormulaCardState(value)
   }, [])
 
   const setWireframe = useCallback((value: boolean) => {
@@ -531,6 +544,7 @@ export function useThreeViewer() {
   const setBackground = useCallback((mode: Background) => {
     setBackgroundState(mode)
     sceneRef.current?.setBackground(mode)
+    pdbModelRef.current?.setFormulaTheme(mode)
   }, [])
 
   const toggleHelpers = useCallback(
@@ -756,10 +770,10 @@ export function useThreeViewer() {
     setRenderMode,
     colorMode,
     setColorMode,
-    structureOverlay,
-    setStructureOverlay,
-    showAtomLabels,
-    setShowAtomLabels,
+    formulaOverlay,
+    setFormulaOverlay,
+    showFormulaCard,
+    setShowFormulaCard,
     wireframe,
     setWireframe,
     autoRotate,

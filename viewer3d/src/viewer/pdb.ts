@@ -6,6 +6,8 @@ import { AXES, type Axis, type AxisState } from './crossSection'
 import { fetchWithTimeout } from './net'
 import { mmcifToLegacyPDB } from './mmcif'
 import { classifyFunctionalGroups, FUNCTIONAL_GROUP_COLORS, type FunctionalGroup } from './functionalGroups'
+import { bondOrderKey, inferBondOrders, type BondOrderMap } from './bondOrders'
+import type { Background } from './SceneManager'
 
 /** The ball-and-stick bond color, exported so the cross-section cap over a cut bond can match it instead of a mismatched flat color. */
 export const BOND_COLOR_HEX = 0xaaaaaa
@@ -76,10 +78,12 @@ export interface PDBModel {
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
   setColorMode: (mode: PDBColorMode) => void
-  /** Compound-only "spacefill + skeleton" overlay: keeps the spacefill spheres but makes them translucent and shows the ball-and-stick bonds through them, so the underlying connectivity stays visible. No-op outside spacefill mode. */
-  setStructureOverlay: (enabled: boolean) => void
-  /** Compound-only element-symbol labels floating at each atom's position, for telling functional groups apart at a glance. Hidden in cartoon mode regardless. */
-  setShowAtomLabels: (enabled: boolean) => void
+  /** Compound-only structural-formula overlay (Ball & Stick only): double/triple-bond lines plus heteroatom-symbol sprites, aligned to the real 3D geometry instead of PubChem's flat drawing. No-op outside ball-stick mode. */
+  setFormulaOverlay: (enabled: boolean) => void
+  /** Recolors the formula overlay's lines/labels to stay legible against the current viewport background. */
+  setFormulaTheme: (theme: Background) => void
+  /** Whether the double/triple-bond data behind the formula overlay came from the source file (SDF/MOL's own bond-type column) or was inferred from bond length -- surfaced as a one-line hint so an inferred guess isn't mistaken for certain data. */
+  bondOrderSource: 'file' | 'inferred'
   /** Highlights an atom (and the bonds attached to it) in-place, or clears the highlight when passed null. */
   setSelectedAtom: (index: number | null) => void
   /** Highlights a bond (and its two endpoint atoms) in-place, or clears the highlight when passed null. */
@@ -115,33 +119,38 @@ const cylinderGeometryLow = new THREE.CylinderGeometry(1, 1, 1, 6)
 cylinderGeometryLow.translate(0, 0.5, 0)
 const discGeometry = new THREE.CircleGeometry(1, 24)
 
-// Small round badge textures for the compound-only element-symbol labels,
-// cached by symbol -- there are only a handful of distinct elements in any
-// one molecule, so building the canvas once per symbol (not once per atom)
-// keeps a labeled ball-and-stick view of even a modest-sized compound cheap.
+// Heteroatom-symbol textures for the structural-formula overlay (see
+// PDBModel.setFormulaOverlay) -- a bold glyph with a halo instead of a badge
+// behind it, since these sit directly on top of atom spheres/bond lines and
+// need to read at a glance the way PubChem's own O/N labels do, not compete
+// with a filled background for attention. Cached by symbol+theme -- only a
+// handful of distinct elements ever need a texture for one molecule, and
+// only two themes exist, so this stays cheap however many heteroatoms a
+// compound has.
 const labelTextureCache = new Map<string, THREE.CanvasTexture>()
-function labelTexture(symbol: string): THREE.CanvasTexture {
-  const cached = labelTextureCache.get(symbol)
+function labelTexture(symbol: string, theme: Background): THREE.CanvasTexture {
+  const cacheKey = `${symbol}:${theme}`
+  const cached = labelTextureCache.get(cacheKey)
   if (cached) return cached
-  const size = 64
+  const size = 128
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = 'rgba(15, 18, 28, 0.85)'
-  ctx.beginPath()
-  ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
-  ctx.lineWidth = 2
-  ctx.stroke()
-  ctx.fillStyle = '#f4f6fb'
-  ctx.font = `bold ${symbol.length > 1 ? 24 : 30}px sans-serif`
+  ctx.font = `800 ${symbol.length > 1 ? 76 : 92}px sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(symbol, size / 2, size / 2 + 1)
+  // The halo (opposite the glyph's own color) is what keeps the letter
+  // legible over whatever happens to be behind it -- a flat fill alone
+  // washes out against an atom sphere or bond line of a similar color.
+  ctx.lineJoin = 'round'
+  ctx.lineWidth = 14
+  ctx.strokeStyle = theme === 'dark' ? 'rgba(10, 12, 20, 0.9)' : 'rgba(255, 255, 255, 0.9)'
+  ctx.strokeText(symbol, size / 2, size / 2 + 2)
+  ctx.fillStyle = theme === 'dark' ? '#f4f6fb' : '#14161f'
+  ctx.fillText(symbol, size / 2, size / 2 + 2)
   const texture = new THREE.CanvasTexture(canvas)
-  labelTextureCache.set(symbol, texture)
+  labelTextureCache.set(cacheKey, texture)
   return texture
 }
 
@@ -150,7 +159,7 @@ const BALL_STICK_ATOM_SCALE = 0.28
 const UP = new THREE.Vector3(0, 1, 0)
 const UNIT_Z = new THREE.Vector3(0, 0, 1)
 
-export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'spacefill'): Promise<PDBModel> {
+export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'spacefill', fileBondOrders?: BondOrderMap): Promise<PDBModel> {
   const pdb = loader.parse(text)
   const { geometryAtoms, geometryBonds, json } = pdb as {
     geometryAtoms: THREE.BufferGeometry
@@ -285,19 +294,10 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     atomMesh.instanceMatrix.needsUpdate = true
     if (atomMesh.instanceColor) atomMesh.instanceColor.needsUpdate = true
     atomMesh.visible = true
-
-    // The "spacefill + skeleton" overlay needs the spheres translucent so the
-    // ball-and-stick bonds drawn through them (see applyBonds) stay visible
-    // instead of being fully hidden inside the solid spacefill volume.
-    const overlayActive = currentMode === 'spacefill' && structureOverlayEnabled
-    const atomMaterial = atomMesh.material as THREE.MeshStandardMaterial
-    atomMaterial.transparent = overlayActive
-    atomMaterial.opacity = overlayActive ? 0.45 : 1
-    atomMaterial.depthWrite = !overlayActive
   }
 
   function applyBonds(currentMode: PDBRenderMode) {
-    bondMesh.visible = (currentMode === 'ball-stick' || (currentMode === 'spacefill' && structureOverlayEnabled)) && bondPairs.length > 0
+    bondMesh.visible = currentMode === 'ball-stick' && bondPairs.length > 0
     if (!bondMesh.visible) return
     for (let i = 0; i < bondPairs.length; i++) {
       const [a, b] = bondPairs[i]
@@ -433,38 +433,167 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const cartoonGroup = buildCartoonGroup(positions, atomDetails, ssClass)
   cartoonGroup.visible = false
 
-  // Compound-only element-symbol labels (one sprite per atom, built once and
-  // toggled visible/hidden rather than rebuilt) -- small molecules only have
-  // a few dozen atoms at most, so per-atom sprites are cheap; this would be
-  // the wrong approach for a multi-thousand-atom protein, but that case
-  // never enables labels in the first place (gated to compounds in the UI).
-  const atomLabelGroup = new THREE.Group()
-  atomLabelGroup.name = 'pdb-atom-labels'
-  atomLabelGroup.visible = false
+  // Real bond-order data (an SDF/MOL's own bond-type column, see sdf.ts)
+  // takes priority when it's available; everything else -- local PDB
+  // samples, RCSB, an uploaded .pdb -- has no such column, so its
+  // double/triple bonds are estimated from bond length instead (see
+  // bondOrders.ts). Either way this feeds only the formula overlay below;
+  // the grey ball-and-stick bonds themselves don't vary by bond order.
+  const elementsUpper = atomDetails.map((a) => a.element.toUpperCase())
+  const bondOrderSource: 'file' | 'inferred' = fileBondOrders && fileBondOrders.size > 0 ? 'file' : 'inferred'
+  const bondOrderValues: number[] =
+    bondOrderSource === 'file'
+      ? bondPairs.map(([a, b]) => fileBondOrders!.get(bondOrderKey(a, b)) ?? 1)
+      : inferBondOrders(positions, elementsUpper, bondPairs)
+
+  // Structural-formula overlay (Ball & Stick only, see setFormulaOverlay):
+  // a thin instanced line per bond -- one line for a single bond, two
+  // parallel lines for a double (or an SDF's own aromatic bond type, which
+  // draws the same as a double rather than trying to Kekule-ize file data
+  // that already came with its own bond typing), three for a triple -- plus
+  // sprite letters on heteroatoms only (skipping C and H, the way a real
+  // structural formula does). Built once, like the cap discs above, and
+  // just toggled visible/hidden rather than rebuilt on every mode switch.
+  const FORMULA_BOND_RADIUS = 0.045
+  const FORMULA_LINE_SEPARATION = 0.16
+  const FORMULA_COLOR_DARK = 0xf4f6fb
+  const FORMULA_COLOR_LIGHT = 0x14161f
+
+  function formulaLineCount(order: number): number {
+    if (order === 3) return 3
+    if (order === 2 || order === 4) return 2
+    return 1
+  }
+  const formulaLineTotal = bondOrderValues.reduce((sum, order) => sum + formulaLineCount(order), 0)
+
+  // depthTest:false + a high renderOrder is what makes this legible through
+  // the atom spheres -- the previous translucent-material approach (see the
+  // git history this replaces) tried to solve the same "stay visible"
+  // problem by making the spheres themselves see-through, which just made
+  // everything murky instead.
+  const formulaBondMaterial = new THREE.MeshBasicMaterial({ color: FORMULA_COLOR_DARK, depthTest: false, depthWrite: false })
+  const formulaBondMesh = new THREE.InstancedMesh(
+    lowDetail ? cylinderGeometryLow : cylinderGeometryHigh,
+    formulaBondMaterial,
+    Math.max(formulaLineTotal, 1),
+  )
+  formulaBondMesh.name = 'pdb-formula-bonds'
+  formulaBondMesh.visible = false
+  formulaBondMesh.renderOrder = 10
+  formulaBondMesh.frustumCulled = false
+
+  // A double/triple bond's parallel lines have to sit in the molecule's own
+  // local plane (like a textbook structural formula), not at some arbitrary
+  // perpendicular -- built from the same bond graph the grey ball-and-stick
+  // bonds use, one adjacency lookup shared by every bond below.
+  const formulaAdjacency: number[][] = Array.from({ length: atomCount }, () => [])
+  for (const [a, b] of bondPairs) {
+    formulaAdjacency[a].push(b)
+    formulaAdjacency[b].push(a)
+  }
+  /** A neighbor of `a` or `b` (preferring a heavy atom) to anchor the offset direction on -- null when this bond has no other neighbor at all (e.g. an isolated diatomic fragment), which falls back to an arbitrary perpendicular. */
+  function planeReferenceAtom(a: number, b: number): number | null {
+    const fromA = formulaAdjacency[a].filter((x) => x !== b)
+    const preferredA = fromA.find((x) => elementsUpper[x] !== 'H') ?? fromA[0]
+    if (preferredA !== undefined) return preferredA
+    const fromB = formulaAdjacency[b].filter((x) => x !== a)
+    return (fromB.find((x) => elementsUpper[x] !== 'H') ?? fromB[0]) ?? null
+  }
+  function fallbackOffsetDir(dir: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
+    const arbitrary = Math.abs(dir.y) < 0.99 ? UP : UNIT_Z
+    return out.crossVectors(dir, arbitrary).normalize()
+  }
+
+  const fBondDir = new THREE.Vector3()
+  const fNormal = new THREE.Vector3()
+  const fOffsetDir = new THREE.Vector3()
+  const fRefVec = new THREE.Vector3()
+  const fLinePos = new THREE.Vector3()
+
+  let formulaInstance = 0
+  for (let i = 0; i < bondPairs.length; i++) {
+    const [a, b] = bondPairs[i]
+    const start = positions[a]
+    const end = positions[b]
+    fBondDir.copy(end).sub(start)
+    const length = fBondDir.length() || 0.0001
+    fBondDir.normalize()
+
+    const refIdx = planeReferenceAtom(a, b)
+    if (refIdx !== null) {
+      fRefVec.copy(positions[refIdx]).sub(start)
+      fNormal.crossVectors(fBondDir, fRefVec)
+    }
+    if (refIdx === null || fNormal.lengthSq() < 1e-6) {
+      fallbackOffsetDir(fBondDir, fOffsetDir)
+    } else {
+      fOffsetDir.crossVectors(fNormal, fBondDir).normalize()
+    }
+
+    q.setFromUnitVectors(UP, fBondDir)
+
+    const order = bondOrderValues[i]
+    const offsets =
+      order === 3
+        ? [-FORMULA_LINE_SEPARATION, 0, FORMULA_LINE_SEPARATION]
+        : formulaLineCount(order) === 2
+          ? [-FORMULA_LINE_SEPARATION / 2, FORMULA_LINE_SEPARATION / 2]
+          : [0]
+    for (const offset of offsets) {
+      // The shared cylinder geometry is pre-translated so its local span is
+      // y=0..1 (see cylinderGeometryHigh/Low above), not centered on the
+      // origin -- positioning at the bond's own start point (offset
+      // sideways for a double/triple line), not its midpoint, is what makes
+      // the scaled/rotated instance actually reach from start to end instead
+      // of stopping half a bond length short.
+      fLinePos.copy(start).addScaledVector(fOffsetDir, offset)
+      m.compose(fLinePos, q, s.set(FORMULA_BOND_RADIUS, length, FORMULA_BOND_RADIUS))
+      formulaBondMesh.setMatrixAt(formulaInstance, m)
+      formulaInstance++
+    }
+  }
+  formulaBondMesh.instanceMatrix.needsUpdate = true
+
+  const formulaLabelGroup = new THREE.Group()
+  formulaLabelGroup.name = 'pdb-formula-labels'
+  formulaLabelGroup.visible = false
+  let formulaTheme: Background = 'dark'
+  const formulaLabelSprites: { sprite: THREE.Sprite; symbol: string }[] = []
   for (let i = 0; i < atomCount; i++) {
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(atomDetails[i].element), transparent: true }))
-    const labelScale = Math.max(radii[i] * BALL_STICK_ATOM_SCALE * 2.6, 0.32)
-    sprite.scale.set(labelScale, labelScale, 1)
+    if (elementsUpper[i] === 'C' || elementsUpper[i] === 'H') continue
+    const symbol = atomDetails[i].element
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(symbol, formulaTheme), transparent: true, depthTest: false, depthWrite: false }))
+    sprite.renderOrder = 11
+    sprite.scale.set(0.5, 0.5, 1)
     sprite.position.copy(positions[i])
-    atomLabelGroup.add(sprite)
+    formulaLabelGroup.add(sprite)
+    formulaLabelSprites.push({ sprite, symbol })
+  }
+
+  function updateFormulaVisibility() {
+    const active = formulaEnabled && currentRenderMode === 'ball-stick'
+    formulaBondMesh.visible = active
+    formulaLabelGroup.visible = active
+    // Two cylinder sets occupying the same spot are a z-fighting mess --
+    // the overlay replaces the plain grey bonds rather than joining them.
+    if (active) bondMesh.visible = false
   }
 
   function applyMode(currentMode: PDBRenderMode) {
     atomMesh.visible = currentMode !== 'cartoon'
     cartoonGroup.visible = currentMode === 'cartoon'
-    atomLabelGroup.visible = atomLabelsEnabled && currentMode !== 'cartoon'
+    updateFormulaVisibility()
   }
 
   let currentRenderMode = mode
   let currentColorMode: PDBColorMode = 'element'
-  let structureOverlayEnabled = false
-  let atomLabelsEnabled = false
+  let formulaEnabled = false
   applyAtoms(currentRenderMode, currentColorMode)
   applyBonds(currentRenderMode)
   applyMode(currentRenderMode)
 
   const group = new THREE.Group()
-  group.add(atomMesh, bondMesh, cartoonGroup, capDiscGroup)
+  group.add(atomMesh, bondMesh, cartoonGroup, capDiscGroup, formulaBondMesh)
   group.name = 'pdb-model'
 
   // Bounding box is measured before the label sprites go in -- a Sprite has
@@ -472,7 +601,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   // only happens at render time), so including it here could skew the box
   // camera framing and cross-section radius are computed from.
   const localBox = new THREE.Box3().setFromObject(group)
-  group.add(atomLabelGroup)
+  group.add(formulaLabelGroup)
 
   return {
     group,
@@ -489,6 +618,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     chainColors,
     functionalGroupCounts,
     box: localBox,
+    bondOrderSource,
     setRenderMode: (newMode: PDBRenderMode) => {
       currentRenderMode = newMode
       applyAtoms(currentRenderMode, currentColorMode)
@@ -499,14 +629,18 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
       currentColorMode = newColorMode
       applyAtoms(currentRenderMode, currentColorMode)
     },
-    setStructureOverlay: (enabled: boolean) => {
-      structureOverlayEnabled = enabled
-      applyAtoms(currentRenderMode, currentColorMode)
-      applyBonds(currentRenderMode)
+    setFormulaOverlay: (enabled: boolean) => {
+      formulaEnabled = enabled
+      updateFormulaVisibility()
     },
-    setShowAtomLabels: (enabled: boolean) => {
-      atomLabelsEnabled = enabled
-      applyMode(currentRenderMode)
+    setFormulaTheme: (theme: Background) => {
+      formulaTheme = theme
+      formulaBondMaterial.color.setHex(theme === 'dark' ? FORMULA_COLOR_DARK : FORMULA_COLOR_LIGHT)
+      for (const { sprite, symbol } of formulaLabelSprites) {
+        const spriteMaterial = sprite.material as THREE.SpriteMaterial
+        spriteMaterial.map = labelTexture(symbol, theme)
+        spriteMaterial.needsUpdate = true
+      }
     },
     setSelectedAtom: setSelectedAtomFn,
     setSelectedBond: setSelectedBondFn,

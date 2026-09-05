@@ -5,12 +5,13 @@ import { buildCartoonGroup, CARTOON_COLORS, type SSClass } from './cartoon'
 import { AXES, type Axis, type AxisState } from './crossSection'
 import { fetchWithTimeout } from './net'
 import { mmcifToLegacyPDB } from './mmcif'
+import { classifyFunctionalGroups, FUNCTIONAL_GROUP_COLORS, type FunctionalGroup } from './functionalGroups'
 
 /** The ball-and-stick bond color, exported so the cross-section cap over a cut bond can match it instead of a mismatched flat color. */
 export const BOND_COLOR_HEX = 0xaaaaaa
 
 export type PDBRenderMode = 'ball-stick' | 'spacefill' | 'cartoon'
-export type PDBColorMode = 'element' | 'structure' | 'chain'
+export type PDBColorMode = 'element' | 'structure' | 'chain' | 'functional-group'
 
 /**
  * A cycling palette for the "체인별" (by chain) color mode -- distinct
@@ -70,9 +71,15 @@ export interface PDBModel {
   hasCartoon: boolean
   /** Chain ID -> assigned color (hex number), for the "체인별" mode's legend. */
   chainColors: Record<string, number>
+  /** How many atoms fell into each detected functional group (see functionalGroups.ts), for the "작용기별" mode's legend. Omits groups with zero atoms. */
+  functionalGroupCounts: Partial<Record<FunctionalGroup, number>>
   box: THREE.Box3
   setRenderMode: (mode: PDBRenderMode) => void
   setColorMode: (mode: PDBColorMode) => void
+  /** Compound-only "spacefill + skeleton" overlay: keeps the spacefill spheres but makes them translucent and shows the ball-and-stick bonds through them, so the underlying connectivity stays visible. No-op outside spacefill mode. */
+  setStructureOverlay: (enabled: boolean) => void
+  /** Compound-only element-symbol labels floating at each atom's position, for telling functional groups apart at a glance. Hidden in cartoon mode regardless. */
+  setShowAtomLabels: (enabled: boolean) => void
   /** Highlights an atom (and the bonds attached to it) in-place, or clears the highlight when passed null. */
   setSelectedAtom: (index: number | null) => void
   /** Highlights a bond (and its two endpoint atoms) in-place, or clears the highlight when passed null. */
@@ -107,6 +114,36 @@ cylinderGeometryHigh.translate(0, 0.5, 0)
 const cylinderGeometryLow = new THREE.CylinderGeometry(1, 1, 1, 6)
 cylinderGeometryLow.translate(0, 0.5, 0)
 const discGeometry = new THREE.CircleGeometry(1, 24)
+
+// Small round badge textures for the compound-only element-symbol labels,
+// cached by symbol -- there are only a handful of distinct elements in any
+// one molecule, so building the canvas once per symbol (not once per atom)
+// keeps a labeled ball-and-stick view of even a modest-sized compound cheap.
+const labelTextureCache = new Map<string, THREE.CanvasTexture>()
+function labelTexture(symbol: string): THREE.CanvasTexture {
+  const cached = labelTextureCache.get(symbol)
+  if (cached) return cached
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = 'rgba(15, 18, 28, 0.85)'
+  ctx.beginPath()
+  ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'
+  ctx.lineWidth = 2
+  ctx.stroke()
+  ctx.fillStyle = '#f4f6fb'
+  ctx.font = `bold ${symbol.length > 1 ? 24 : 30}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(symbol, size / 2, size / 2 + 1)
+  const texture = new THREE.CanvasTexture(canvas)
+  labelTextureCache.set(symbol, texture)
+  return texture
+}
 
 const BOND_RADIUS = 0.12
 const BALL_STICK_ATOM_SCALE = 0.28
@@ -206,6 +243,13 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const bondPairs: [number, number][] =
     conectBondCount >= atomCount * 0.5 ? resolveConectBondIndices(conectPos, conectBondCount, positions, center) : inferBondsByDistance(positions, radii)
 
+  const functionalGroups = classifyFunctionalGroups(atomDetails, bondPairs)
+  const functionalGroupCounts: Partial<Record<FunctionalGroup, number>> = {}
+  for (const g of functionalGroups) {
+    if (g === 'none') continue
+    functionalGroupCounts[g] = (functionalGroupCounts[g] ?? 0) + 1
+  }
+
   const bondMesh = new THREE.InstancedMesh(
     lowDetail ? cylinderGeometryLow : cylinderGeometryHigh,
     // Base material color must stay white for the same instance-color reason as atomMesh.
@@ -227,6 +271,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   function atomDisplayColor(i: number, currentColorMode: PDBColorMode): THREE.Color {
     if (currentColorMode === 'structure') return color.copy(CARTOON_COLORS[ssClass[i]])
     if (currentColorMode === 'chain') return color.copy(chainColorMap.get(chainKey(atomDetails[i])) ?? WHITE)
+    if (currentColorMode === 'functional-group') return color.setHex(FUNCTIONAL_GROUP_COLORS[functionalGroups[i]])
     return color.setRGB(colorAttr.getX(i), colorAttr.getY(i), colorAttr.getZ(i))
   }
 
@@ -240,10 +285,19 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     atomMesh.instanceMatrix.needsUpdate = true
     if (atomMesh.instanceColor) atomMesh.instanceColor.needsUpdate = true
     atomMesh.visible = true
+
+    // The "spacefill + skeleton" overlay needs the spheres translucent so the
+    // ball-and-stick bonds drawn through them (see applyBonds) stay visible
+    // instead of being fully hidden inside the solid spacefill volume.
+    const overlayActive = currentMode === 'spacefill' && structureOverlayEnabled
+    const atomMaterial = atomMesh.material as THREE.MeshStandardMaterial
+    atomMaterial.transparent = overlayActive
+    atomMaterial.opacity = overlayActive ? 0.45 : 1
+    atomMaterial.depthWrite = !overlayActive
   }
 
   function applyBonds(currentMode: PDBRenderMode) {
-    bondMesh.visible = currentMode === 'ball-stick' && bondPairs.length > 0
+    bondMesh.visible = (currentMode === 'ball-stick' || (currentMode === 'spacefill' && structureOverlayEnabled)) && bondPairs.length > 0
     if (!bondMesh.visible) return
     for (let i = 0; i < bondPairs.length; i++) {
       const [a, b] = bondPairs[i]
@@ -379,13 +433,32 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   const cartoonGroup = buildCartoonGroup(positions, atomDetails, ssClass)
   cartoonGroup.visible = false
 
+  // Compound-only element-symbol labels (one sprite per atom, built once and
+  // toggled visible/hidden rather than rebuilt) -- small molecules only have
+  // a few dozen atoms at most, so per-atom sprites are cheap; this would be
+  // the wrong approach for a multi-thousand-atom protein, but that case
+  // never enables labels in the first place (gated to compounds in the UI).
+  const atomLabelGroup = new THREE.Group()
+  atomLabelGroup.name = 'pdb-atom-labels'
+  atomLabelGroup.visible = false
+  for (let i = 0; i < atomCount; i++) {
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(atomDetails[i].element), transparent: true }))
+    const labelScale = Math.max(radii[i] * BALL_STICK_ATOM_SCALE * 2.6, 0.32)
+    sprite.scale.set(labelScale, labelScale, 1)
+    sprite.position.copy(positions[i])
+    atomLabelGroup.add(sprite)
+  }
+
   function applyMode(currentMode: PDBRenderMode) {
     atomMesh.visible = currentMode !== 'cartoon'
     cartoonGroup.visible = currentMode === 'cartoon'
+    atomLabelGroup.visible = atomLabelsEnabled && currentMode !== 'cartoon'
   }
 
   let currentRenderMode = mode
   let currentColorMode: PDBColorMode = 'element'
+  let structureOverlayEnabled = false
+  let atomLabelsEnabled = false
   applyAtoms(currentRenderMode, currentColorMode)
   applyBonds(currentRenderMode)
   applyMode(currentRenderMode)
@@ -394,7 +467,12 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
   group.add(atomMesh, bondMesh, cartoonGroup, capDiscGroup)
   group.name = 'pdb-model'
 
+  // Bounding box is measured before the label sprites go in -- a Sprite has
+  // no meaningful world-space orientation yet at this point (billboarding
+  // only happens at render time), so including it here could skew the box
+  // camera framing and cross-section radius are computed from.
   const localBox = new THREE.Box3().setFromObject(group)
+  group.add(atomLabelGroup)
 
   return {
     group,
@@ -409,6 +487,7 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     metadata,
     hasCartoon: cartoonGroup.children.length > 0,
     chainColors,
+    functionalGroupCounts,
     box: localBox,
     setRenderMode: (newMode: PDBRenderMode) => {
       currentRenderMode = newMode
@@ -419,6 +498,15 @@ export async function loadPDBFromText(text: string, mode: PDBRenderMode = 'space
     setColorMode: (newColorMode: PDBColorMode) => {
       currentColorMode = newColorMode
       applyAtoms(currentRenderMode, currentColorMode)
+    },
+    setStructureOverlay: (enabled: boolean) => {
+      structureOverlayEnabled = enabled
+      applyAtoms(currentRenderMode, currentColorMode)
+      applyBonds(currentRenderMode)
+    },
+    setShowAtomLabels: (enabled: boolean) => {
+      atomLabelsEnabled = enabled
+      applyMode(currentRenderMode)
     },
     setSelectedAtom: setSelectedAtomFn,
     setSelectedBond: setSelectedBondFn,

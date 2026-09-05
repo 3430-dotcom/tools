@@ -3,6 +3,7 @@ import { AxisSlider } from './AxisSlider'
 import type { Axis, AxisState } from '../viewer/crossSection'
 import type { PDBColorMode, PDBRenderMode, PDBSearchResult } from '../viewer/pdb'
 import type { PubchemSearchResult } from '../viewer/pubchem'
+import { FUNCTIONAL_GROUP_COLORS, FUNCTIONAL_GROUP_LABELS, type FunctionalGroup } from '../viewer/functionalGroups'
 import type { Background } from '../viewer/SceneManager'
 import type { ModelInfo, ModelKind } from '../types'
 
@@ -111,6 +112,10 @@ interface SidebarProps {
   onRenderModeChange: (mode: PDBRenderMode) => void
   colorMode: PDBColorMode
   onColorModeChange: (mode: PDBColorMode) => void
+  structureOverlay: boolean
+  onStructureOverlayChange: (v: boolean) => void
+  showAtomLabels: boolean
+  onShowAtomLabelsChange: (v: boolean) => void
   wireframe: boolean
   onWireframeChange: (v: boolean) => void
   autoRotate: boolean
@@ -164,6 +169,15 @@ export function Sidebar(props: SidebarProps) {
     setShowSuggestions(false)
     props.onSubmitQuery(query)
   }
+
+  // A protein/polymer structure (real backbone, cartoon-capable) and a small
+  // compound (no backbone at all) support meaningfully different rendering
+  // options -- a compound has no secondary structure or multiple chains to
+  // color by, but does benefit from compound-specific extras a protein has
+  // no use for (a functional-group color mode, atom labels, a see-through
+  // spacefill overlay), so the render-mode card's contents differ by which
+  // kind of model is actually loaded rather than showing every option always.
+  const isCompound = props.modelInfo?.kind === 'pdb' && !props.modelInfo.hasCartoon
 
   return (
     <aside className={`sidebar ${props.className ?? ''}`}>
@@ -334,12 +348,14 @@ export function Sidebar(props: SidebarProps) {
         <section className="panel">
           <h2>렌더링 모드</h2>
           <div className="segmented">
-            <button
-              className={props.renderMode === 'cartoon' ? 'active' : ''}
-              onClick={() => props.onRenderModeChange('cartoon')}
-            >
-              Cartoon
-            </button>
+            {!isCompound && (
+              <button
+                className={props.renderMode === 'cartoon' ? 'active' : ''}
+                onClick={() => props.onRenderModeChange('cartoon')}
+              >
+                Cartoon
+              </button>
+            )}
             <button
               className={props.renderMode === 'ball-stick' ? 'active' : ''}
               onClick={() => props.onRenderModeChange('ball-stick')}
@@ -361,6 +377,29 @@ export function Sidebar(props: SidebarProps) {
             </p>
           )}
 
+          {isCompound && props.renderMode !== 'cartoon' && (
+            <>
+              {props.renderMode === 'spacefill' && (
+                <label className="switch-row">
+                  <input
+                    type="checkbox"
+                    checked={props.structureOverlay}
+                    onChange={(e) => props.onStructureOverlayChange(e.target.checked)}
+                  />
+                  골격 구조 덧씌우기 (반투명 스페이스필 + Ball &amp; Stick)
+                </label>
+              )}
+              <label className="switch-row">
+                <input
+                  type="checkbox"
+                  checked={props.showAtomLabels}
+                  onChange={(e) => props.onShowAtomLabelsChange(e.target.checked)}
+                />
+                원소 기호 라벨 표시
+              </label>
+            </>
+          )}
+
           {props.renderMode !== 'cartoon' && (
             <>
               <h2>색상 기준</h2>
@@ -371,20 +410,32 @@ export function Sidebar(props: SidebarProps) {
                 >
                   원소별
                 </button>
-                <button
-                  className={props.colorMode === 'structure' ? 'active' : ''}
-                  onClick={() => props.onColorModeChange('structure')}
-                >
-                  2차 구조별
-                </button>
-                <button
-                  className={props.colorMode === 'chain' ? 'active' : ''}
-                  onClick={() => props.onColorModeChange('chain')}
-                >
-                  체인별
-                </button>
+                {!isCompound && (
+                  <button
+                    className={props.colorMode === 'structure' ? 'active' : ''}
+                    onClick={() => props.onColorModeChange('structure')}
+                  >
+                    2차 구조별
+                  </button>
+                )}
+                {!isCompound && (
+                  <button
+                    className={props.colorMode === 'chain' ? 'active' : ''}
+                    onClick={() => props.onColorModeChange('chain')}
+                  >
+                    체인별
+                  </button>
+                )}
+                {isCompound && (
+                  <button
+                    className={props.colorMode === 'functional-group' ? 'active' : ''}
+                    onClick={() => props.onColorModeChange('functional-group')}
+                  >
+                    작용기별
+                  </button>
+                )}
               </div>
-              {(props.colorMode === 'structure' || props.colorMode === 'chain') && (
+              {(props.colorMode === 'structure' || props.colorMode === 'chain' || props.colorMode === 'functional-group') && (
                 <>
                   <button
                     type="button"
@@ -424,6 +475,20 @@ export function Sidebar(props: SidebarProps) {
                         </>
                       ) : (
                         '체인 정보가 없어요.'
+                      )}
+                    </p>
+                  )}
+                  {colorLegendOpen && props.colorMode === 'functional-group' && (
+                    <p className="hint chain-legend">
+                      {props.modelInfo?.kind === 'pdb' && Object.keys(props.modelInfo.functionalGroupCounts).length > 0 ? (
+                        (Object.entries(props.modelInfo.functionalGroupCounts) as [FunctionalGroup, number][]).map(([group, count]) => (
+                          <span key={group} className="chain-legend__item">
+                            <span style={{ color: `#${FUNCTIONAL_GROUP_COLORS[group].toString(16).padStart(6, '0')}` }}>●</span>{' '}
+                            {FUNCTIONAL_GROUP_LABELS[group]} ({count})
+                          </span>
+                        ))
+                      ) : (
+                        '이 분자에서 인식된 작용기가 없어요. (결합 정보가 없거나 단순한 구조일 수 있어요.)'
                       )}
                     </p>
                   )}

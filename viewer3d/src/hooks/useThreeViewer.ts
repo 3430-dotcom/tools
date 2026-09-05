@@ -86,6 +86,8 @@ export function useThreeViewer() {
   const [axisState, setAxisStateState] = useState<Record<Axis, AxisState>>(defaultAxisState())
   const [renderMode, setRenderModeState] = useState<PDBRenderMode>('spacefill')
   const [colorMode, setColorModeState] = useState<PDBColorMode>('element')
+  const [structureOverlay, setStructureOverlayState] = useState(false)
+  const [showAtomLabels, setShowAtomLabelsState] = useState(false)
   const [wireframe, setWireframeState] = useState(false)
   const [autoRotate, setAutoRotateState] = useState(false)
   const [background, setBackgroundState] = useState<Background>('dark')
@@ -194,6 +196,12 @@ export function useThreeViewer() {
         pdbModelRef.current = model
         stlModelRef.current = null
         setColorModeState('element')
+        // A new model's own render-mode capability (protein backbone or
+        // not) may differ completely from the previous one's, so these
+        // compound-only toggles reset rather than carrying over a state
+        // that might not even apply to what just loaded.
+        setStructureOverlayState(false)
+        setShowAtomLabelsState(false)
         const materials = model.group.children
           .filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
           .map((c) => c.material as THREE.Material)
@@ -208,6 +216,7 @@ export function useThreeViewer() {
           metadata: model.metadata,
           hasCartoon: model.hasCartoon,
           chainColors: model.chainColors,
+          functionalGroupCounts: model.functionalGroupCounts,
           ...(compoundInfo ? { compound: compoundInfo } : {}),
         })
         setStatus(null)
@@ -496,6 +505,18 @@ export function useThreeViewer() {
     if (model && crossSectionRef.current) model.updateAtomCaps(crossSectionRef.current.planes, axisStateRef.current)
   }, [])
 
+  /** Compound-only "spacefill + skeleton" overlay -- see PDBModel.setStructureOverlay. */
+  const setStructureOverlay = useCallback((value: boolean) => {
+    setStructureOverlayState(value)
+    pdbModelRef.current?.setStructureOverlay(value)
+  }, [])
+
+  /** Compound-only element-symbol atom labels -- see PDBModel.setShowAtomLabels. */
+  const setShowAtomLabels = useCallback((value: boolean) => {
+    setShowAtomLabelsState(value)
+    pdbModelRef.current?.setShowAtomLabels(value)
+  }, [])
+
   const setWireframe = useCallback((value: boolean) => {
     setWireframeState(value)
     const mat = stlModelRef.current?.mesh.material as THREE.MeshStandardMaterial | undefined
@@ -735,6 +756,10 @@ export function useThreeViewer() {
     setRenderMode,
     colorMode,
     setColorMode,
+    structureOverlay,
+    setStructureOverlay,
+    showAtomLabels,
+    setShowAtomLabels,
     wireframe,
     setWireframe,
     autoRotate,

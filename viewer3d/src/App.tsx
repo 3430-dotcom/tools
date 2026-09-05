@@ -116,6 +116,10 @@ function App() {
           onRenderModeChange={viewer.setRenderMode}
           colorMode={viewer.colorMode}
           onColorModeChange={viewer.setColorMode}
+          structureOverlay={viewer.structureOverlay}
+          onStructureOverlayChange={viewer.setStructureOverlay}
+          showAtomLabels={viewer.showAtomLabels}
+          onShowAtomLabelsChange={viewer.setShowAtomLabels}
           wireframe={viewer.wireframe}
           onWireframeChange={viewer.setWireframe}
           autoRotate={viewer.autoRotate}

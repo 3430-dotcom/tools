@@ -145,12 +145,12 @@ export function Sidebar(props: SidebarProps) {
       <section className="panel">
         <h2>모델 불러오기</h2>
         <button className="btn btn--primary" onClick={() => fileInputRef.current?.click()}>
-          파일 열기 (.pdb / .stl)
+          파일 열기 (.pdb / .sdf / .stl)
         </button>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdb,.ent,.stl"
+          accept=".pdb,.ent,.sdf,.mol,.stl"
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0]
@@ -165,16 +165,17 @@ export function Sidebar(props: SidebarProps) {
             value={idOrUrl}
             onChange={(e) => setIdOrUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}
-            placeholder="예: 1CRN 또는 https://.../model.stl"
+            placeholder="예: 1CRN, dibutyl phthalate, https://.../model.stl"
           />
           <button className="btn" onClick={() => idOrUrl.trim() && props.onLoadFromInput(idOrUrl.trim())}>
             불러오기
           </button>
         </div>
         <p className="hint">
-          PDB ID(4자리, 예: 1CRN)를 입력하면 RCSB 단백질 데이터뱅크에서 바로 불러옵니다. 또는 .pdb/.stl 파일을
-          직접 가리키는 URL을 붙여넣으세요 (예: NASA 3D Resources, GitHub 등). 사이트가 CORS를 막아두면 실패할 수
-          있어요 — 그럴 땐 파일을 받아서 "파일 열기"로 올려주세요.
+          PDB ID(4자리, 예: 1CRN)를 입력하면 RCSB 단백질 데이터뱅크에서 바로 불러옵니다. RCSB는 단백질 등 거대분자만
+          다루므로, 그 외의 일반 화합물(예: dibutyl phthalate)은 영문 이름을 입력하면 PubChem에서 대신 찾아옵니다.
+          또는 .pdb/.stl 파일을 직접 가리키는 URL을 붙여넣으세요 (예: NASA 3D Resources, GitHub 등). 사이트가 CORS를
+          막아두면 실패할 수 있어요 — 그럴 땐 파일을 받아서 "파일 열기"로 올려주세요.
         </p>
 
         <div className="pdb-id-row">

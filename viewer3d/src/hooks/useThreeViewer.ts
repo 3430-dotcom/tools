@@ -15,6 +15,8 @@ import {
 } from '../viewer/pdb'
 import { parseSTL, type STLModel } from '../viewer/stl'
 import { fetchWithTimeout } from '../viewer/net'
+import { fetchCompoundByName } from '../viewer/pubchem'
+import { sdfToLegacyPDB } from '../viewer/sdf'
 import type { ModelInfo, ModelKind } from '../types'
 
 /** True for a raw browser fetch failure (CORS block, DNS, offline) as opposed to an app-thrown error with a real message. */
@@ -236,6 +238,27 @@ export function useThreeViewer() {
     [loadPDBText],
   )
 
+  const loadCompoundByName = useCallback(
+    async (name: string) => {
+      setError(null)
+      setStatus(`PubChem에서 "${name}" 검색 중...`)
+      try {
+        const text = await fetchCompoundByName(name)
+        await loadPDBText(text)
+      } catch (e) {
+        setError(
+          isNetworkError(e)
+            ? 'PubChem 서버에 연결할 수 없습니다 (브라우저 CORS 정책이거나 네트워크 문제일 수 있어요).'
+            : e instanceof Error
+              ? e.message
+              : '화합물을 불러오지 못했습니다.',
+        )
+        setStatus(null)
+      }
+    },
+    [loadPDBText],
+  )
+
   const loadSTLBuffer = useCallback(
     (buffer: ArrayBuffer) => {
       setError(null)
@@ -273,8 +296,15 @@ export function useThreeViewer() {
       } else if (lower.endsWith('.pdb') || lower.endsWith('.ent')) {
         const text = await file.text()
         await loadPDBText(text)
+      } else if (lower.endsWith('.sdf') || lower.endsWith('.mol')) {
+        setError(null)
+        try {
+          await loadPDBText(sdfToLegacyPDB(await file.text()))
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'SDF/MOL 파일을 불러오지 못했습니다.')
+        }
       } else {
-        setError('지원하지 않는 파일 형식입니다. .pdb 또는 .stl 파일을 사용하세요.')
+        setError('지원하지 않는 파일 형식입니다. .pdb, .sdf/.mol, 또는 .stl 파일을 사용하세요.')
       }
     },
     [loadPDBText, loadSTLBuffer],
@@ -340,11 +370,16 @@ export function useThreeViewer() {
         await loadFromUrl(trimmed)
       } else if (/^[0-9][a-zA-Z0-9]{3}$/.test(trimmed)) {
         await loadPDBId(trimmed)
+      } else if (trimmed.length > 0) {
+        // Not a URL or a 4-character PDB ID -- RCSB only covers proteins
+        // and nucleic acids, so anything else (a small-molecule name like
+        // "dibutyl phthalate") is tried against PubChem instead.
+        await loadCompoundByName(trimmed)
       } else {
-        setError('PDB ID(예: 1CRN) 또는 .pdb/.stl 파일의 URL을 입력하세요.')
+        setError('PDB ID(예: 1CRN), 화합물 이름(예: aspirin), 또는 .pdb/.stl 파일의 URL을 입력하세요.')
       }
     },
-    [loadFromUrl, loadPDBId],
+    [loadFromUrl, loadPDBId, loadCompoundByName],
   )
 
   const searchPDBByName = useCallback(async (query: string) => {

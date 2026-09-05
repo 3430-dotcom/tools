@@ -1,4 +1,5 @@
 import type { PDBMetadata } from './viewer/pdb'
+import type { CompoundInfo } from './viewer/pubchem'
 
 export type ModelKind = 'pdb' | 'stl' | null
 
@@ -11,6 +12,8 @@ export interface PDBInfo {
   hasCartoon: boolean
   /** Chain ID -> assigned color (hex number), for the "체인별" color mode's legend. */
   chainColors: Record<string, number>
+  /** Present only when this model came from a PubChem compound-name lookup -- chemistry info the info panel shows alongside the usual atom/bond breakdown. */
+  compound?: CompoundInfo
 }
 
 export interface STLInfo {

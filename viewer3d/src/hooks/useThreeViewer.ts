@@ -15,7 +15,7 @@ import {
 } from '../viewer/pdb'
 import { parseSTL, type STLModel } from '../viewer/stl'
 import { fetchWithTimeout } from '../viewer/net'
-import { fetchCompoundByName } from '../viewer/pubchem'
+import { fetchCompoundByName, searchCompounds, type CompoundInfo, type PubchemSearchResult } from '../viewer/pubchem'
 import { sdfToLegacyPDB } from '../viewer/sdf'
 import type { ModelInfo, ModelKind } from '../types'
 
@@ -92,6 +92,7 @@ export function useThreeViewer() {
   const [showHelpers, setShowHelpers] = useState(true)
   const [showCaption, setShowCaption] = useState(true)
   const [searchResults, setSearchResults] = useState<PDBSearchResult[]>([])
+  const [compoundResults, setCompoundResults] = useState<PubchemSearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selection, setSelection] = useState<Selection | null>(null)
 
@@ -185,7 +186,7 @@ export function useThreeViewer() {
   )
 
   const loadPDBText = useCallback(
-    async (text: string) => {
+    async (text: string, compoundInfo?: CompoundInfo) => {
       setError(null)
       setStatus('PDB 구조 분석 중...')
       try {
@@ -207,6 +208,7 @@ export function useThreeViewer() {
           metadata: model.metadata,
           hasCartoon: model.hasCartoon,
           chainColors: model.chainColors,
+          ...(compoundInfo ? { compound: compoundInfo } : {}),
         })
         setStatus(null)
       } catch (e) {
@@ -243,8 +245,8 @@ export function useThreeViewer() {
       setError(null)
       setStatus(`PubChem에서 "${name}" 검색 중...`)
       try {
-        const text = await fetchCompoundByName(name)
-        await loadPDBText(text)
+        const { text, info } = await fetchCompoundByName(name)
+        await loadPDBText(text, info)
       } catch (e) {
         setError(
           isNetworkError(e)
@@ -386,20 +388,38 @@ export function useThreeViewer() {
     const trimmed = query.trim()
     if (!trimmed) {
       setSearchResults([])
+      setCompoundResults([])
       return
     }
     setSearching(true)
     setError(null)
+    let rcsbResults: PDBSearchResult[] = []
+    let rcsbError: unknown = null
     try {
-      const results = await searchPDB(trimmed)
-      setSearchResults(results)
-      if (results.length === 0) setError(`"${trimmed}"에 대한 검색 결과가 없습니다.`)
+      rcsbResults = await searchPDB(trimmed)
+      setSearchResults(rcsbResults)
     } catch (e) {
+      rcsbError = e
       setSearchResults([])
-      setError(isNetworkError(e) ? 'RCSB 검색 서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.' : (e as Error).message)
-    } finally {
-      setSearching(false)
     }
+    // A parallel, best-effort PubChem search -- RCSB only covers proteins
+    // and nucleic acids, so a general compound name (e.g. "aspirin") often
+    // has results on one side but not the other. This never throws (see
+    // searchCompounds), so a failure here shouldn't override or block the
+    // RCSB result/error above.
+    const compounds = await searchCompounds(trimmed)
+    setCompoundResults(compounds)
+
+    if (rcsbResults.length === 0 && compounds.length === 0) {
+      setError(
+        rcsbError && isNetworkError(rcsbError)
+          ? 'RCSB 검색 서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.'
+          : rcsbError instanceof Error
+            ? rcsbError.message
+            : `"${trimmed}"에 대한 검색 결과가 없습니다.`,
+      )
+    }
+    setSearching(false)
   }, [])
 
   const setAxis = useCallback(
@@ -682,6 +702,7 @@ export function useThreeViewer() {
     loadFromInput,
     loadSampleUrl,
     searchResults,
+    compoundResults,
     searching,
     searchPDBByName,
     selection,

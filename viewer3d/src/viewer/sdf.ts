@@ -1,4 +1,5 @@
 import { buildAtomLine, buildConectLines } from './legacyPdbText'
+import { bondOrderKey, type BondOrderMap } from './bondOrders'
 
 /**
  * Minimal SDF/MOL (V2000 "connection table") reader, converted into
@@ -21,7 +22,7 @@ import { buildAtomLine, buildConectLines } from './legacyPdbText'
  * them out as real CONECT records gives small molecules more accurate
  * bonds than the app's own distance heuristic would.
  */
-export function sdfToLegacyPDB(sdf: string): string {
+export function sdfToLegacyPDB(sdf: string): { text: string; bondOrders: BondOrderMap } {
   // A PubChem SDF response (or a multi-molecule file) can concatenate
   // several molecules separated by a "$$$$" line -- only the first is
   // ever relevant here (a single compound-name lookup, or the first
@@ -55,17 +56,23 @@ export function sdfToLegacyPDB(sdf: string): string {
   }
 
   const adjacency = new Map<number, number[]>()
+  // Column 7-9 of a V2000 bond line is the bond type (1=single, 2=double,
+  // 3=triple, 4=aromatic) -- keyed on 0-based atom indices (SDF numbers
+  // atoms from 1) so it lines up directly with pdb.ts's own positions/
+  // atomDetails indexing once this text is re-parsed.
+  const bondOrders: BondOrderMap = new Map()
   for (const line of bondLines) {
     const a = parseInt(line.slice(0, 3), 10)
     const b = parseInt(line.slice(3, 6), 10)
     if (!a || !b) continue
     ;(adjacency.get(a) ?? adjacency.set(a, []).get(a)!).push(b)
     ;(adjacency.get(b) ?? adjacency.set(b, []).get(b)!).push(a)
+    bondOrders.set(bondOrderKey(a - 1, b - 1), parseInt(line.slice(6, 9), 10) || 1)
   }
   out.push(...buildConectLines(adjacency))
 
   out.push('END')
-  return out.join('\n')
+  return { text: out.join('\n'), bondOrders }
 }
 
 /** Cheap check that a fetched response is actually SDF content, not e.g. an HTML error page returned with a 200 status. */

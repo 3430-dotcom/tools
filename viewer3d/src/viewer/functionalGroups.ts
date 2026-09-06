@@ -39,23 +39,32 @@ export const FUNCTIONAL_GROUP_LABELS: Record<FunctionalGroup, string> = {
   none: '해당 없음',
 }
 
-/** Finds every 6-membered all-carbon ring and flags its atoms as aromatic -- a cheap stand-in for real aromaticity perception (which needs bond order) that still reliably catches benzene rings, the common case in teaching examples. */
-function findAromaticCarbonRings(adj: number[][], elements: string[]): boolean[] {
+/**
+ * Finds simple cycles of the given sizes in the bond graph, restricted to
+ * atoms `elementFilter` accepts (or every atom, if omitted) -- shared by
+ * this module's own aromatic-benzene detection and bondOrders.ts's Kekule
+ * ring perception, so there's exactly one ring-finding DFS in the codebase
+ * rather than two copies drifting apart.
+ */
+export function findRings(adj: number[][], elements: string[], opts: { sizes: number[]; elementFilter?: (element: string) => boolean }): number[][] {
   const n = elements.length
-  const inRing = new Array(n).fill(false)
+  const sizeSet = new Set(opts.sizes)
+  const maxSize = Math.max(...opts.sizes)
+  const filter = opts.elementFilter ?? (() => true)
+  const rings: number[][] = []
 
   function dfs(start: number, current: number, path: number[], visited: boolean[], depth: number) {
-    if (depth > 6) return
+    if (depth > maxSize) return
     for (const next of adj[current]) {
       if (next === start) {
-        if (depth === 6) for (const idx of path) inRing[idx] = true
+        if (sizeSet.has(depth)) rings.push([...path])
         continue
       }
       // Only explore neighbors with a higher index than `start` -- every
       // ring still gets found (from its lowest-indexed member), just once
       // instead of once per member, and this also keeps the search from
       // wandering back out through already-completed lower-indexed atoms.
-      if (next < start || visited[next] || elements[next] !== 'C') continue
+      if (next < start || visited[next] || !filter(elements[next])) continue
       visited[next] = true
       path.push(next)
       dfs(start, next, path, visited, depth + 1)
@@ -65,11 +74,20 @@ function findAromaticCarbonRings(adj: number[][], elements: string[]): boolean[]
   }
 
   for (let start = 0; start < n; start++) {
-    if (elements[start] !== 'C') continue
+    if (!filter(elements[start])) continue
     const visited = new Array(n).fill(false)
     visited[start] = true
     dfs(start, start, [start], visited, 1)
   }
+  return rings
+}
+
+/** Finds every 6-membered all-carbon ring and flags its atoms as aromatic -- a cheap stand-in for real aromaticity perception (which needs bond order) that still reliably catches benzene rings, the common case in teaching examples. */
+function findAromaticCarbonRings(adj: number[][], elements: string[]): boolean[] {
+  const n = elements.length
+  const inRing = new Array(n).fill(false)
+  const rings = findRings(adj, elements, { sizes: [6], elementFilter: (el) => el === 'C' })
+  for (const ring of rings) for (const idx of ring) inRing[idx] = true
   return inRing
 }
 

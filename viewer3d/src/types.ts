@@ -15,8 +15,12 @@ export interface PDBInfo {
   chainColors: Record<string, number>
   /** How many atoms fell into each detected functional group, for the "작용기별" color mode's legend. Omits groups with zero atoms. */
   functionalGroupCounts: Partial<Record<FunctionalGroup, number>>
+  /** Whether the structural-formula overlay's double/triple-bond data came from the source file or was inferred from bond length -- see PDBModel.bondOrderSource. */
+  bondOrderSource: 'file' | 'inferred'
   /** Present only when this model came from a PubChem compound-name lookup -- chemistry info the info panel shows alongside the usual atom/bond breakdown. */
   compound?: CompoundInfo
+  /** The compound name to look up PubChem's flat-depiction PNG under (see StructureFormulaCard) -- either the compound-lookup's own name, or a curated sample's pubchemName. Absent for an uploaded file or a protein, which hides the flat-structure card and its checkbox entirely. */
+  depictionName?: string
 }
 
 export interface STLInfo {

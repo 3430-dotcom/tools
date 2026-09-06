@@ -1,0 +1,1117 @@
+<title>플롯 스튜디오</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Gowun+Dodum&family=JetBrains+Mono:wght@400;500;600&family=Tinos:ital,wght@0,400;0,700;1,400&family=Arimo:wght@400;500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<style>
+  :root {
+    --bg: #eef1ec;
+    --paper-line: #dde3dc;
+    --surface: #ffffff;
+    --surface-2: #f6f7f4;
+    --ink: #171b16;
+    --ink-soft: #545f55;
+    --ink-faint: #8b9389;
+    --line: #d7ddd3;
+    --line-strong: #b9c2b5;
+    --accent: #2c4a86;
+    --accent-soft: #e7ecf6;
+    --accent-2: #c97f24;
+    --accent-2-soft: #f7ead4;
+    --danger: #a4322a;
+    --danger-soft: #f7e6e3;
+    --shadow: 0 1px 2px rgba(23,27,22,0.06), 0 8px 24px -12px rgba(23,27,22,0.18);
+    --radius: 3px;
+    --font-display: 'Gowun Batang', 'Noto Serif KR', Georgia, serif;
+    --font-body: 'Gowun Dodum', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+    --font-chart-serif: 'Tinos', 'Gowun Batang', serif;
+    --font-chart-sans: 'Arimo', 'Gowun Dodum', sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12140f;
+      --paper-line: #1d211a;
+      --surface: #1a1d16;
+      --surface-2: #20241c;
+      --ink: #eef1e9;
+      --ink-soft: #b3bcac;
+      --ink-faint: #77806f;
+      --line: #2b3025;
+      --line-strong: #3a4131;
+      --accent: #8fadea;
+      --accent-soft: #22283a;
+      --accent-2: #e3ab5f;
+      --accent-2-soft: #362a17;
+      --danger: #e08277;
+      --danger-soft: #3a211d;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12140f;
+    --paper-line: #1d211a;
+    --surface: #1a1d16;
+    --surface-2: #20241c;
+    --ink: #eef1e9;
+    --ink-soft: #b3bcac;
+    --ink-faint: #77806f;
+    --line: #2b3025;
+    --line-strong: #3a4131;
+    --accent: #8fadea;
+    --accent-soft: #22283a;
+    --accent-2: #e3ab5f;
+    --accent-2-soft: #362a17;
+    --danger: #e08277;
+    --danger-soft: #3a211d;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    background-image:
+      linear-gradient(var(--paper-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-soft); }
+
+  a { color: var(--accent); }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 24px 64px; }
+
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--line-strong);
+    flex-wrap: wrap;
+  }
+  header.top .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header.top h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 26px;
+    margin: 0;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+  }
+  header.top .tagline {
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    max-width: 46ch;
+  }
+  header.top .meta {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .workbench {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 22px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .workbench { grid-template-columns: 1fr; }
+  }
+
+  /* ---- control rail ---- */
+  .rail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 16px 18px;
+  }
+  .panel h2 {
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 12px;
+  }
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin-bottom: 5px;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    padding: 7px 9px;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus, button:focus-visible, label.dropzone:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  input[type="number"] { font-family: var(--font-mono); }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .check input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+  label.dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    text-align: center;
+    border: 1.5px dashed var(--line-strong);
+    border-radius: var(--radius);
+    padding: 18px 10px;
+    cursor: pointer;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    transition: border-color .12s, background .12s;
+  }
+  label.dropzone.drag { border-color: var(--accent); background: var(--accent-soft); }
+  label.dropzone strong { color: var(--ink); font-size: 13.5px; font-weight: 600; }
+  label.dropzone input { display: none; }
+  .file-status { margin-top: 8px; font-size: 12px; color: var(--ink-faint); font-family: var(--font-mono); }
+  .file-status.ok { color: var(--accent); }
+  .file-status.err { color: var(--danger); }
+
+  .colorlist { display: flex; flex-direction: column; gap: 8px; }
+  .colorlist .row { display: flex; align-items: center; gap: 8px; }
+  .colorlist .swatch-label { flex: 1; font-size: 12.5px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  input[type="color"] {
+    width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: none; cursor: pointer;
+  }
+  .hint { font-size: 11.5px; color: var(--ink-faint); margin-top: 8px; line-height: 1.5; }
+
+  /* ---- stage ---- */
+  .stage { display: flex; flex-direction: column; gap: 14px; }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .readout {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 7px 11px;
+  }
+  .readout b { color: var(--ink); font-weight: 600; }
+  .btns { display: flex; gap: 8px; }
+  button {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    transition: border-color .12s, background .12s, color .12s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { opacity: 0.9; color: #fff; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:disabled:hover { border-color: var(--line-strong); color: var(--ink); }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 4px;
+    overflow: auto;
+  }
+  .chart-card .canvas {
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+  }
+  .chart-card svg { display: block; max-width: 100%; height: auto; }
+
+  .empty-state {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-size: 13.5px;
+  }
+
+  .preview {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px 14px;
+  }
+  .preview h2 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 10px;
+  }
+  .preview .scroll { overflow-x: auto; }
+  table.data-preview {
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  table.data-preview th, table.data-preview td {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    white-space: nowrap;
+  }
+  table.data-preview th:first-child, table.data-preview td:first-child { text-align: left; }
+  table.data-preview th {
+    color: var(--ink-faint);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 10.5px;
+  }
+  table.data-preview td.err-col { color: var(--ink-faint); }
+
+  .banner {
+    display: none;
+    font-size: 12.5px;
+    padding: 9px 12px;
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+  }
+  .banner.show { display: block; }
+  .banner.error { background: var(--danger-soft); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
+  .banner.info { background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+
+  footer.foot {
+    margin-top: 36px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>플롯 스튜디오</h1>
+      <div class="tagline">CSV를 업로드하면 APA·IEEE·matplotlib 스타일의 학술 그래프를 즉시 만들어 SVG·PNG로 저장할 수 있습니다.</div>
+    </div>
+    <div class="meta">Client-side · No upload to a server</div>
+  </header>
+
+  <div class="workbench">
+    <aside class="rail">
+      <div class="panel">
+        <h2>1 · 데이터</h2>
+        <div class="field">
+          <label class="dropzone" id="dropzone">
+            <strong id="dropzoneTitle">CSV 파일 선택 또는 드래그</strong>
+            <span id="dropzoneSub">첫 행은 헤더, 오차범위는 <code style="font-family:var(--font-mono)">_err</code> 접미사</span>
+            <input type="file" id="fileInput" accept=".csv,text/csv" />
+          </label>
+          <div class="file-status" id="fileStatus">샘플 데이터 표시 중 — 원하는 CSV를 올려보세요.</div>
+        </div>
+        <div class="field">
+          <label for="xColSelect">x축 컬럼</label>
+          <select id="xColSelect"></select>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>2 · 그래프</h2>
+        <div class="row2">
+          <div class="field">
+            <label for="styleSelect">스타일</label>
+            <select id="styleSelect">
+              <option value="apa">APA (세리프, 격자 없음)</option>
+              <option value="ieee">IEEE (작은 크기, 옅은 격자)</option>
+              <option value="matplotlib">matplotlib 기본</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="kindSelect">유형</label>
+            <select id="kindSelect">
+              <option value="line">선(line)</option>
+              <option value="scatter">산점도(scatter)</option>
+              <option value="bar">막대(bar)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="titleInput">제목</label>
+          <input type="text" id="titleInput" placeholder="예: 온도에 따른 반응 속도" />
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="xlabelInput">x축 라벨</label>
+            <input type="text" id="xlabelInput" placeholder="비우면 컬럼명" />
+          </div>
+          <div class="field">
+            <label for="ylabelInput">y축 라벨</label>
+            <input type="text" id="ylabelInput" placeholder="비우면 자동" />
+          </div>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="trendlineCheck" /> 선형 추세선 + R² 표시</label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>3 · 크기</h2>
+        <div class="row3">
+          <div class="field">
+            <label for="widthInput">너비 (in)</label>
+            <input type="number" id="widthInput" min="2" max="20" step="0.1" value="8" />
+          </div>
+          <div class="field">
+            <label for="heightInput">높이 (in)</label>
+            <input type="number" id="heightInput" min="1.5" max="20" step="0.1" value="4.5" />
+          </div>
+          <div class="field" style="padding-bottom:7px;">
+            <label class="check" style="white-space:nowrap;"><input type="checkbox" id="lockRatio" checked /> 16:9</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>4 · 범례</h2>
+        <div class="row2">
+          <div class="field">
+            <label for="legendSelect">표시</label>
+            <select id="legendSelect">
+              <option value="auto">자동</option>
+              <option value="on">항상 표시</option>
+              <option value="off">숨김</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="legendLocSelect">위치</label>
+            <select id="legendLocSelect">
+              <option value="best">best (자동 배치)</option>
+              <option value="upper left">upper left</option>
+              <option value="upper center">upper center</option>
+              <option value="upper right">upper right</option>
+              <option value="center left">center left</option>
+              <option value="center">center</option>
+              <option value="center right">center right</option>
+              <option value="lower left">lower left</option>
+              <option value="lower center">lower center</option>
+              <option value="lower right">lower right</option>
+              <option value="right">right</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>5 · 색상</h2>
+        <label class="check" style="margin-bottom:10px;"><input type="checkbox" id="customColorsCheck" /> 계열별 색상 직접 지정</label>
+        <div class="colorlist" id="colorList"></div>
+        <div class="hint">기본은 스타일별 자동 순환 색상(matplotlib 스타일은 tab10)을 사용합니다.</div>
+      </div>
+    </aside>
+
+    <section class="stage">
+      <div class="banner error" id="errorBanner"></div>
+      <div class="toolbar">
+        <div class="readout" id="readout">데이터를 불러오는 중…</div>
+        <div class="btns">
+          <button id="downloadSvg">SVG로 저장</button>
+          <button id="downloadPng" class="primary">PNG로 저장</button>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="canvas" id="chartCanvas">
+          <div class="empty-state">그래프를 그릴 수 없습니다.</div>
+        </div>
+      </div>
+      <div class="preview">
+        <h2>데이터 미리보기 (상위 5행)</h2>
+        <div class="scroll"><table class="data-preview" id="previewTable"></table></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    브라우저에서 전부 처리됩니다 — 업로드한 CSV는 서버로 전송되지 않습니다. PNG는 300dpi로 래스터화되며, 본문에 쓰인 화면 표시용 웹폰트가 아닌 시스템 대체 글꼴로 저장될 수 있습니다. 정확한 글꼴이 필요하면 SVG로 저장하세요.
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------------------------------------------------------------
+   * constants / style presets (ported from academic_graph_generator)
+   * ------------------------------------------------------------------- */
+  const STYLE_DEFS = {
+    apa: {
+      chartFont: "'Tinos','Gowun Batang',serif",
+      titleWeight: 700, titleSize: 17, labelSize: 13, tickSize: 12, legendSize: 12,
+      spinesTopRight: false, grid: false, legendFrame: false, forceCycle: true,
+    },
+    ieee: {
+      chartFont: "'Tinos','Gowun Batang',serif",
+      titleWeight: 400, titleSize: 14, labelSize: 11.5, tickSize: 10.5, legendSize: 10.5,
+      spinesTopRight: false, grid: true, legendFrame: false, forceCycle: true,
+    },
+    matplotlib: {
+      chartFont: "'Arimo','Gowun Dodum',sans-serif",
+      titleWeight: 400, titleSize: 18, labelSize: 13, tickSize: 12, legendSize: 12,
+      spinesTopRight: true, grid: false, legendFrame: true, forceCycle: false,
+    },
+  };
+  const PRINT_CYCLE = ['#1a1a1a', '#4472c4', '#c00000', '#548235', '#7030a0', '#bf8f00'];
+  const TAB10 = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'];
+  const MARKER_CYCLE = ['circle', 'square', 'triup', 'diamond', 'tridown', 'plus', 'xshape'];
+  const DASH_CYCLE = [null, '7,4', '7,3,1.6,3', '1.6,3'];
+  const ERROR_SUFFIXES = ['_err', '_error', '_stderr', '_std', '_sd'];
+  const HANGUL_RE = /[가-힣]/;
+  const LOC_CORNERS = { 'upper left': [0,0], 'upper right': [1,0], 'lower left': [0,1], 'lower right': [1,1] };
+
+  const SAMPLE_CSV =
+`temperature_C,rate_A,rate_A_err,rate_B,rate_B_err
+10,0.8,0.05,0.5,0.04
+20,1.5,0.08,1.0,0.06
+30,2.6,0.1,1.8,0.09
+40,4.1,0.12,2.9,0.11
+50,6.3,0.2,4.4,0.15
+60,9.0,0.25,6.5,0.2`;
+
+  /* ---------------------------------------------------------------------
+   * state
+   * ------------------------------------------------------------------- */
+  let state = { columns: [], rows: [], xCol: null, series: [], seriesColors: {} };
+
+  const el = (id) => document.getElementById(id);
+  const controls = {
+    style: el('styleSelect'), kind: el('kindSelect'), title: el('titleInput'),
+    xlabel: el('xlabelInput'), ylabel: el('ylabelInput'), trendline: el('trendlineCheck'),
+    width: el('widthInput'), height: el('heightInput'), lockRatio: el('lockRatio'),
+    legend: el('legendSelect'), legendLoc: el('legendLocSelect'),
+    customColors: el('customColorsCheck'), xCol: el('xColSelect'),
+  };
+
+  /* ---------------------------------------------------------------------
+   * data helpers (ported from data.py)
+   * ------------------------------------------------------------------- */
+  function detectSeries(columns, xCol) {
+    const errorMap = {};
+    columns.forEach((col) => {
+      const lower = col.toLowerCase();
+      for (const suf of ERROR_SUFFIXES) {
+        if (lower.endsWith(suf)) { errorMap[col.slice(0, col.length - suf.length)] = col; break; }
+      }
+    });
+    const errCols = new Set(Object.values(errorMap));
+    return columns
+      .filter((c) => c !== xCol && !errCols.has(c))
+      .map((c) => ({ label: c, yCol: c, errCol: errorMap[c] || null }));
+  }
+
+  function linreg(xs, ys) {
+    const n = xs.length;
+    const xm = d3.mean(xs), ym = d3.mean(ys);
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) { num += (xs[i] - xm) * (ys[i] - ym); den += (xs[i] - xm) ** 2; }
+    const slope = den === 0 ? 0 : num / den;
+    const intercept = ym - slope * xm;
+    let ssRes = 0, ssTot = 0;
+    for (let i = 0; i < n; i++) { const fit = slope * xs[i] + intercept; ssRes += (ys[i] - fit) ** 2; ssTot += (ys[i] - ym) ** 2; }
+    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 1;
+    return { slope, intercept, r2 };
+  }
+
+  function isNumericColumn(rows, col) {
+    return rows.every((r) => typeof r[col] === 'number' && !Number.isNaN(r[col]));
+  }
+
+  /* ---------------------------------------------------------------------
+   * CSV loading
+   * ------------------------------------------------------------------- */
+  function loadCsvText(text, sourceLabel) {
+    const result = Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true });
+    const columns = result.meta.fields || [];
+    const rows = result.data;
+    // PapaParse의 errors 배열에는 "구분자를 자동으로 추정했다"처럼 파싱 자체는
+    // 성공한 경고성 메시지도 섞여 있으므로, 실제로 쓸 데이터가 없을 때만 fatal로 취급한다.
+    if (columns.length < 2 || rows.length === 0) {
+      const detail = result.errors && result.errors.length ? ' (' + result.errors[0].message + ')' : '';
+      showError('CSV에는 최소 2개 컬럼(x, y)과 1개 이상의 데이터 행이 필요합니다.' + detail);
+      return;
+    }
+    clearError();
+    state.columns = columns;
+    state.rows = rows;
+    state.xCol = columns[0];
+    populateXColSelect();
+    rebuildSeries();
+    setFileStatus(sourceLabel, 'ok');
+    render();
+  }
+
+  function populateXColSelect() {
+    controls.xCol.innerHTML = '';
+    state.columns.forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      controls.xCol.appendChild(opt);
+    });
+    controls.xCol.value = state.xCol;
+  }
+
+  function rebuildSeries() {
+    state.series = detectSeries(state.columns, state.xCol);
+    if (state.series.length === 0) {
+      showError('오차범위 컬럼을 제외하면 그릴 수 있는 y 데이터 컬럼이 없습니다.');
+      return;
+    }
+    clearError();
+    buildColorPickers();
+    buildDataPreview();
+  }
+
+  function buildColorPickers() {
+    const list = el('colorList');
+    list.innerHTML = '';
+    const cycle = STYLE_DEFS[controls.style.value].forceCycle ? PRINT_CYCLE : TAB10;
+    state.series.forEach((s, i) => {
+      if (!(s.yCol in state.seriesColors)) state.seriesColors[s.yCol] = cycle[i % cycle.length];
+      const row = document.createElement('div');
+      row.className = 'row';
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = state.seriesColors[s.yCol];
+      input.addEventListener('input', () => { state.seriesColors[s.yCol] = input.value; render(); });
+      const label = document.createElement('span');
+      label.className = 'swatch-label';
+      label.textContent = s.label + (s.errCol ? '  (±' + s.errCol + ')' : '');
+      row.appendChild(input);
+      row.appendChild(label);
+      list.appendChild(row);
+    });
+  }
+
+  function buildDataPreview() {
+    const table = el('previewTable');
+    table.innerHTML = '';
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    state.columns.forEach((c) => {
+      const th = document.createElement('th');
+      th.textContent = c;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    state.rows.slice(0, 5).forEach((r) => {
+      const tr = document.createElement('tr');
+      state.columns.forEach((c) => {
+        const td = document.createElement('td');
+        td.textContent = r[c] === null || r[c] === undefined ? '' : r[c];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+  }
+
+  function showError(msg) {
+    const b = el('errorBanner');
+    b.textContent = msg;
+    b.classList.add('show');
+  }
+  function clearError() { el('errorBanner').classList.remove('show'); }
+  function setFileStatus(text, kind) {
+    const s = el('fileStatus');
+    s.textContent = text;
+    s.className = 'file-status' + (kind ? ' ' + kind : '');
+  }
+
+  /* ---------------------------------------------------------------------
+   * marker shapes
+   * ------------------------------------------------------------------- */
+  function markerPath(shape, size) {
+    const r = size;
+    switch (shape) {
+      case 'square': return `M${-r},${-r} L${r},${-r} L${r},${r} L${-r},${r} Z`;
+      case 'diamond': return `M0,${-r * 1.25} L${r * 1.25},0 L0,${r * 1.25} L${-r * 1.25},0 Z`;
+      case 'triup': return `M0,${-r * 1.2} L${r * 1.1},${r * 0.9} L${-r * 1.1},${r * 0.9} Z`;
+      case 'tridown': return `M0,${r * 1.2} L${r * 1.1},${-r * 0.9} L${-r * 1.1},${-r * 0.9} Z`;
+      case 'plus': return `M${-r},${-r*0.32} L${-r*0.32},${-r*0.32} L${-r*0.32},${-r} L${r*0.32},${-r} L${r*0.32},${-r*0.32} L${r},${-r*0.32} L${r},${r*0.32} L${r*0.32},${r*0.32} L${r*0.32},${r} L${-r*0.32},${r} L${-r*0.32},${r*0.32} L${-r},${r*0.32} Z`;
+      case 'xshape': return `M${-r},${-r*0.65} L${-r*0.65},${-r} L0,${-r*0.35} L${r*0.65},${-r} L${r},${-r*0.65} L${r*0.35},0 L${r},${r*0.65} L${r*0.65},${r} L0,${r*0.35} L${-r*0.65},${r} L${-r},${r*0.65} L${-r*0.35},0 Z`;
+      default: return null; // circle drawn separately
+    }
+  }
+  function appendMarker(g, cx, cy, shape, size, color) {
+    if (shape === 'circle') {
+      g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', size).attr('fill', color);
+    } else {
+      g.append('path').attr('d', markerPath(shape, size)).attr('transform', `translate(${cx},${cy})`).attr('fill', color);
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+   * chart rendering
+   * ------------------------------------------------------------------- */
+  function buildChartOptions() {
+    return {
+      style: controls.style.value,
+      kind: controls.kind.value,
+      title: controls.title.value.trim(),
+      xlabel: controls.xlabel.value.trim(),
+      ylabel: controls.ylabel.value.trim(),
+      trendline: controls.trendline.checked,
+      figW: Math.max(2, +controls.width.value || 8),
+      figH: Math.max(1.5, +controls.height.value || 4.5),
+      legendMode: controls.legend.value,
+      legendLoc: controls.legendLoc.value,
+      useCustomColors: controls.customColors.checked,
+    };
+  }
+
+  function renderChart(opts) {
+    const S = STYLE_DEFS[opts.style];
+    const PX_PER_IN = 96;
+    const W = opts.figW * PX_PER_IN, H = opts.figH * PX_PER_IN;
+    const xCol = state.xCol, series = state.series, rows = state.rows;
+
+    const hasKorean = HANGUL_RE.test([opts.title, opts.xlabel, opts.ylabel, xCol, ...series.map((s) => s.label)].filter(Boolean).join(''));
+    const trendWord = hasKorean ? '추세선' : 'trendline';
+    const defaultYLabel = series.length === 1 ? series[0].yCol : (hasKorean ? '값' : 'value');
+    const finalXLabel = opts.xlabel || xCol;
+    const finalYLabel = opts.ylabel || defaultYLabel;
+
+    const marginLeft = 58 + (opts.ylabel || defaultYLabel ? 16 : 0);
+    const marginRight = 16;
+    const marginTop = opts.title ? 42 : 16;
+    const marginBottom = 54;
+    const plotW = Math.max(10, W - marginLeft - marginRight);
+    const plotH = Math.max(10, H - marginTop - marginBottom);
+
+    const isBar = opts.kind === 'bar';
+    const xIsNumeric = !isBar && isNumericColumn(rows, xCol);
+    const categories = rows.map((r) => String(r[xCol]));
+
+    let xScale, xBand;
+    if (isBar) {
+      xScale = d3.scaleBand().domain(categories).range([0, plotW]).padding(0.28);
+      xBand = d3.scaleBand().domain(series.map((s) => s.yCol)).range([0, xScale.bandwidth()]).padding(0.12);
+    } else if (xIsNumeric) {
+      const xExtent = d3.extent(rows, (r) => +r[xCol]);
+      const xPad = (xExtent[1] - xExtent[0]) * 0.04 || 1;
+      xScale = d3.scaleLinear().domain([xExtent[0] - xPad, xExtent[1] + xPad]).nice().range([0, plotW]);
+    } else {
+      xScale = d3.scalePoint().domain(categories).range([0, plotW]).padding(0.5);
+    }
+
+    const yVals = [];
+    series.forEach((s) => {
+      rows.forEach((r) => {
+        const y = +r[s.yCol];
+        if (!Number.isNaN(y)) {
+          yVals.push(y);
+          if (s.errCol) { const e = Math.abs(+r[s.errCol]) || 0; yVals.push(y - e, y + e); }
+        }
+      });
+    });
+    if (isBar) yVals.push(0);
+    const yExtent = [d3.min(yVals), d3.max(yVals)];
+    const yPad = (yExtent[1] - yExtent[0]) * 0.08 || 1;
+    const yScale = d3.scaleLinear().domain([yExtent[0] - yPad, yExtent[1] + yPad]).nice().range([plotH, 0]);
+
+    const svg = d3.create('svg')
+      .attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('width', W).attr('height', H)
+      .attr('xmlns', 'http://www.w3.org/2000/svg')
+      .style('background', '#ffffff')
+      .style('font-family', S.chartFont);
+
+    svg.append('rect').attr('width', W).attr('height', H).attr('fill', '#ffffff');
+
+    const plot = svg.append('g').attr('transform', `translate(${marginLeft},${marginTop})`);
+
+    // grid
+    if (S.grid) {
+      plot.append('g').attr('class', 'grid')
+        .selectAll('line').data(yScale.ticks(6)).join('line')
+        .attr('x1', 0).attr('x2', plotW).attr('y1', (d) => yScale(d)).attr('y2', (d) => yScale(d))
+        .attr('stroke', '#cccccc').attr('stroke-width', 0.6);
+    }
+
+    // spines
+    plot.append('line').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', plotH).attr('stroke', '#333333').attr('stroke-width', 1);
+    plot.append('line').attr('x1', 0).attr('x2', plotW).attr('y1', plotH).attr('y2', plotH).attr('stroke', '#333333').attr('stroke-width', 1);
+    if (S.spinesTopRight) {
+      plot.append('line').attr('x1', plotW).attr('x2', plotW).attr('y1', 0).attr('y2', plotH).attr('stroke', '#333333').attr('stroke-width', 1);
+      plot.append('line').attr('x1', 0).attr('x2', plotW).attr('y1', 0).attr('y2', 0).attr('stroke', '#333333').attr('stroke-width', 1);
+    }
+
+    // ticks
+    const tickFont = { 'font-family': S.chartFont, 'font-size': S.tickSize + 'px', fill: '#000000' };
+    let xTickVals, xTickPos;
+    if (isBar || !xIsNumeric) {
+      xTickVals = categories.filter((v, i) => categories.indexOf(v) === i);
+      xTickPos = (v) => (isBar ? xScale(v) + xScale.bandwidth() / 2 : xScale(v));
+    } else {
+      xTickVals = xScale.ticks(Math.min(7, rows.length));
+      xTickPos = (v) => xScale(v);
+    }
+    const xTickG = plot.append('g').attr('transform', `translate(0,${plotH})`);
+    xTickG.selectAll('line.tick').data(xTickVals).join('line').attr('class', 'tick')
+      .attr('x1', xTickPos).attr('x2', xTickPos).attr('y1', 0).attr('y2', 5).attr('stroke', '#333333').attr('stroke-width', 1);
+    xTickG.selectAll('text').data(xTickVals).join('text')
+      .attr('x', xTickPos).attr('y', 19).attr('text-anchor', 'middle')
+      .attr('font-family', tickFont['font-family']).attr('font-size', tickFont['font-size']).attr('fill', tickFont.fill)
+      .text((d) => (typeof d === 'number' ? d3.format('~g')(d) : d));
+
+    const yTickVals = yScale.ticks(6);
+    plot.selectAll('line.ytick').data(yTickVals).join('line').attr('class', 'ytick')
+      .attr('x1', -5).attr('x2', 0).attr('y1', (d) => yScale(d)).attr('y2', (d) => yScale(d)).attr('stroke', '#333333').attr('stroke-width', 1);
+    plot.selectAll('text.ytick').data(yTickVals).join('text').attr('class', 'ytick')
+      .attr('x', -9).attr('y', (d) => yScale(d)).attr('dy', '0.32em').attr('text-anchor', 'end')
+      .attr('font-family', tickFont['font-family']).attr('font-size', tickFont['font-size']).attr('fill', tickFont.fill)
+      .text(d3.format('~g'));
+
+    // ---- data marks ----
+    const legendEntries = [];
+    const allPoints = []; // for legend 'best' heuristic, in plot px coords
+    const cycle = S.forceCycle ? PRINT_CYCLE : TAB10;
+
+    function seriesColor(i, s) {
+      if (opts.useCustomColors) return state.seriesColors[s.yCol];
+      return cycle[i % cycle.length];
+    }
+
+    if (isBar) {
+      series.forEach((s, i) => {
+        const color = seriesColor(i, s);
+        rows.forEach((r) => {
+          const cat = String(r[xCol]);
+          const y = +r[s.yCol];
+          if (Number.isNaN(y)) return;
+          const bx = xScale(cat) + xBand(s.yCol);
+          const bw = xBand.bandwidth();
+          const y0 = yScale(0), y1 = yScale(y);
+          const top = Math.min(y0, y1), h = Math.abs(y1 - y0);
+          plot.append('rect').attr('x', bx).attr('y', top).attr('width', bw).attr('height', h)
+            .attr('fill', color).attr('stroke', '#000000').attr('stroke-width', 0.7);
+          allPoints.push([bx + bw / 2, y1]);
+          if (s.errCol) {
+            const e = Math.abs(+r[s.errCol]) || 0;
+            const cx = bx + bw / 2;
+            const yTop = yScale(y + e), yBot = yScale(y - e);
+            plot.append('line').attr('x1', cx).attr('x2', cx).attr('y1', yTop).attr('y2', yBot).attr('stroke', '#000000').attr('stroke-width', 1);
+            plot.append('line').attr('x1', cx - 5).attr('x2', cx + 5).attr('y1', yTop).attr('y2', yTop).attr('stroke', '#000000').attr('stroke-width', 1);
+            plot.append('line').attr('x1', cx - 5).attr('x2', cx + 5).attr('y1', yBot).attr('y2', yBot).attr('stroke', '#000000').attr('stroke-width', 1);
+          }
+        });
+        legendEntries.push({ label: s.label, type: 'patch', color });
+      });
+    } else {
+      series.forEach((s, i) => {
+        const color = seriesColor(i, s);
+        const marker = S.forceCycle ? MARKER_CYCLE[i % MARKER_CYCLE.length] : (opts.kind === 'scatter' ? 'circle' : null);
+        const dash = opts.kind === 'scatter' ? null : (S.forceCycle ? DASH_CYCLE[i % DASH_CYCLE.length] : null);
+        const markerSize = S.forceCycle ? 4 : 3.4;
+
+        const pts = rows.map((r) => {
+          const xv = isBar ? null : (xIsNumeric ? +r[xCol] : String(r[xCol]));
+          return { x: xIsNumeric ? xScale(xv) : xScale(String(r[xCol])), y: +r[s.yCol], raw: r };
+        }).filter((p) => !Number.isNaN(p.y));
+
+        // error bars first (so markers draw on top)
+        pts.forEach((p) => {
+          if (!s.errCol) return;
+          const e = Math.abs(+p.raw[s.errCol]) || 0;
+          if (!e) return;
+          const yTop = yScale(p.y + e), yBot = yScale(p.y - e);
+          plot.append('line').attr('x1', p.x).attr('x2', p.x).attr('y1', yTop).attr('y2', yBot).attr('stroke', color).attr('stroke-width', 1.1);
+          plot.append('line').attr('x1', p.x - 4.5).attr('x2', p.x + 4.5).attr('y1', yTop).attr('y2', yTop).attr('stroke', color).attr('stroke-width', 1.1);
+          plot.append('line').attr('x1', p.x - 4.5).attr('x2', p.x + 4.5).attr('y1', yBot).attr('y2', yBot).attr('stroke', color).attr('stroke-width', 1.1);
+        });
+
+        if (opts.kind === 'line') {
+          const line = d3.line().x((p) => p.x).y((p) => yScale(p.y));
+          const path = plot.append('path').datum(pts).attr('d', line).attr('fill', 'none').attr('stroke', color).attr('stroke-width', 1.6);
+          if (dash) path.attr('stroke-dasharray', dash);
+        }
+        if (marker) {
+          pts.forEach((p) => appendMarker(plot, p.x, yScale(p.y), marker, markerSize, color));
+        }
+        pts.forEach((p) => allPoints.push([p.x, yScale(p.y)]));
+
+        legendEntries.push({ label: s.label, type: 'line', color, marker, dash: opts.kind === 'line' ? dash : null, showMarker: !!marker, showLine: opts.kind === 'line' });
+
+        if (opts.trendline && xIsNumeric && pts.length >= 2) {
+          const xs = pts.map((p) => p.raw[xCol]);
+          const ys = pts.map((p) => p.y);
+          const { slope, intercept, r2 } = linreg(xs, ys);
+          const xMin = d3.min(xs), xMax = d3.max(xs);
+          const tx1 = xScale(xMin), tx2 = xScale(xMax);
+          const ty1 = yScale(slope * xMin + intercept), ty2 = yScale(slope * xMax + intercept);
+          plot.append('line').attr('x1', tx1).attr('x2', tx2).attr('y1', ty1).attr('y2', ty2)
+            .attr('stroke', color).attr('stroke-width', 1.1).attr('stroke-dasharray', '1.6,3').attr('opacity', 0.85);
+          legendEntries.push({ label: `${s.label} ${trendWord} (R²=${r2.toFixed(3)})`, type: 'line', color, dash: '1.6,3', showMarker: false, showLine: true });
+        }
+      });
+    }
+
+    // ---- legend ----
+    const showLegend = opts.legendMode === 'auto' ? (series.length > 1 || opts.trendline) : opts.legendMode === 'on';
+    if (showLegend && legendEntries.length) {
+      drawLegend(plot, legendEntries, opts.legendLoc, plotW, plotH, S, allPoints);
+    }
+
+    // ---- title & axis labels ----
+    if (opts.title) {
+      svg.append('text').attr('x', W / 2).attr('y', marginTop * 0.62).attr('text-anchor', 'middle')
+        .attr('font-family', S.chartFont).attr('font-size', S.titleSize).attr('font-weight', S.titleWeight).attr('fill', '#000000')
+        .text(opts.title);
+    }
+    svg.append('text').attr('x', marginLeft + plotW / 2).attr('y', H - 12).attr('text-anchor', 'middle')
+      .attr('font-family', S.chartFont).attr('font-size', S.labelSize).attr('fill', '#000000')
+      .text(finalXLabel);
+    svg.append('text')
+      .attr('transform', `translate(${16},${marginTop + plotH / 2}) rotate(-90)`)
+      .attr('text-anchor', 'middle')
+      .attr('font-family', S.chartFont).attr('font-size', S.labelSize).attr('fill', '#000000')
+      .text(finalYLabel);
+
+    return svg.node();
+  }
+
+  function drawLegend(plot, entries, loc, plotW, plotH, S, points) {
+    const pad = 8, lineH = S.legendSize + 8, swatchW = 22;
+    let maxLabelLen = 0;
+    entries.forEach((e) => { maxLabelLen = Math.max(maxLabelLen, e.label.length); });
+    const boxW = Math.min(plotW - 4, swatchW + pad * 2.6 + maxLabelLen * S.legendSize * 0.62);
+    const boxH = entries.length * lineH + pad * 1.4;
+
+    let x0, y0;
+    let resolvedLoc = loc;
+    if (loc === 'best') {
+      let bestCorner = 'upper right', bestScore = -Infinity;
+      Object.entries(LOC_CORNERS).forEach(([name, [fx, fy]]) => {
+        const cx = fx * plotW, cy = fy * plotH;
+        let minD = Infinity;
+        for (const [px, py] of points) { const d = Math.hypot(px - cx, py - cy); if (d < minD) minD = d; }
+        if (points.length === 0) minD = 0;
+        if (minD > bestScore) { bestScore = minD; bestCorner = name; }
+      });
+      resolvedLoc = bestCorner;
+    }
+
+    const positions = {
+      'upper left': [pad, pad],
+      'upper center': [(plotW - boxW) / 2, pad],
+      'upper right': [plotW - boxW - pad, pad],
+      'center left': [pad, (plotH - boxH) / 2],
+      'center': [(plotW - boxW) / 2, (plotH - boxH) / 2],
+      'center right': [plotW - boxW - pad, (plotH - boxH) / 2],
+      'right': [plotW - boxW - pad, (plotH - boxH) / 2],
+      'lower left': [pad, plotH - boxH - pad],
+      'lower center': [(plotW - boxW) / 2, plotH - boxH - pad],
+      'lower right': [plotW - boxW - pad, plotH - boxH - pad],
+    };
+    [x0, y0] = positions[resolvedLoc] || positions['upper right'];
+
+    const g = plot.append('g').attr('transform', `translate(${x0},${y0})`);
+    if (S.legendFrame) {
+      g.append('rect').attr('width', boxW).attr('height', boxH).attr('fill', '#ffffff')
+        .attr('stroke', '#cccccc').attr('stroke-width', 1).attr('rx', 2);
+    }
+    entries.forEach((e, i) => {
+      const cy = pad * 0.9 + i * lineH + lineH / 2 - 2;
+      const swatchCx = pad + swatchW / 2 - 2;
+      if (e.type === 'patch') {
+        g.append('rect').attr('x', pad - 2).attr('y', cy - 6).attr('width', swatchW - 6).attr('height', 11)
+          .attr('fill', e.color).attr('stroke', '#000000').attr('stroke-width', 0.6);
+      } else {
+        if (e.showLine) {
+          const line = g.append('line').attr('x1', pad - 2).attr('x2', pad + swatchW - 8).attr('y1', cy).attr('y2', cy)
+            .attr('stroke', e.color).attr('stroke-width', 1.6);
+          if (e.dash) line.attr('stroke-dasharray', e.dash);
+        }
+        if (e.showMarker) appendMarker(g, swatchCx, cy, e.marker, 3.6, e.color);
+      }
+      g.append('text').attr('x', pad + swatchW).attr('y', cy).attr('dy', '0.32em')
+        .attr('font-family', S.chartFont).attr('font-size', S.legendSize).attr('fill', '#000000')
+        .text(e.label);
+    });
+  }
+
+  /* ---------------------------------------------------------------------
+   * top-level render
+   * ------------------------------------------------------------------- */
+  function render() {
+    if (!state.rows.length || !state.series.length) return;
+    const opts = buildChartOptions();
+    const canvas = el('chartCanvas');
+    canvas.innerHTML = '';
+    let node;
+    try {
+      node = renderChart(opts);
+    } catch (e) {
+      showError('그래프를 그리는 중 오류가 발생했습니다: ' + e.message);
+      return;
+    }
+    canvas.appendChild(node);
+    el('readout').innerHTML = `x축: <b>${escapeHtml(state.xCol)}</b> · y 계열: <b>${state.series.map((s) => escapeHtml(s.label)).join(', ')}</b> · ${state.rows.length}행`;
+  }
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  /* ---------------------------------------------------------------------
+   * wiring
+   * ------------------------------------------------------------------- */
+  Object.values(controls).forEach((c) => {
+    c.addEventListener('input', () => {
+      if (c === controls.xCol) { state.xCol = controls.xCol.value; rebuildSeries(); }
+      if (c === controls.style) buildColorPickers();
+      el('colorList').closest('.panel').style.opacity = controls.customColors.checked ? '1' : '0.55';
+      render();
+    });
+  });
+
+  let ratioLock = true;
+  controls.lockRatio.addEventListener('change', () => { ratioLock = controls.lockRatio.checked; if (ratioLock) syncHeightFromWidth(); render(); });
+  function syncHeightFromWidth() { controls.height.value = (Number(controls.width.value) * 9 / 16).toFixed(2); }
+  controls.width.addEventListener('input', () => { if (ratioLock) syncHeightFromWidth(); });
+
+  const fileInput = el('fileInput');
+  const dropzone = el('dropzone');
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => loadCsvText(reader.result, f.name);
+    reader.onerror = () => showError('파일을 읽는 중 오류가 발생했습니다.');
+    reader.readAsText(f);
+  });
+  ['dragover', 'dragenter'].forEach((evt) => dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach((evt) => dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+  dropzone.addEventListener('drop', (e) => {
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => loadCsvText(reader.result, f.name);
+    reader.readAsText(f);
+  });
+
+  /* ---------------------------------------------------------------------
+   * downloads
+   * ------------------------------------------------------------------- */
+  function slug() {
+    const t = controls.title.value.trim();
+    return (t ? t.replace(/[^\w가-힣-]+/g, '_').slice(0, 40) : 'graph') || 'graph';
+  }
+
+  function currentSvgString() {
+    const svgEl = el('chartCanvas').querySelector('svg');
+    if (!svgEl) return null;
+    return new XMLSerializer().serializeToString(svgEl);
+  }
+
+  async function handleSave(filename, data) {
+    try {
+      const downloads = await window.claude?.use?.('downloads');
+      if (!downloads) { showError('이 화면에서는 파일 저장 기능을 사용할 수 없습니다.'); return; }
+      await downloads.save({ filename, data });
+    } catch (err) {
+      if (err && err.code === 'declined') return;
+      showError('저장에 실패했습니다: ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  el('downloadSvg').addEventListener('click', () => {
+    const svgStr = currentSvgString();
+    if (!svgStr) return;
+    handleSave(`${slug()}.svg`, '<?xml version="1.0" encoding="UTF-8"?>\n' + svgStr);
+  });
+
+  el('downloadPng').addEventListener('click', () => {
+    const svgStr = currentSvgString();
+    const svgEl = el('chartCanvas').querySelector('svg');
+    if (!svgStr || !svgEl) return;
+    const w = +svgEl.getAttribute('width'), h = +svgEl.getAttribute('height');
+    const scale = 300 / 96;
+    const canvas = document.createElement('canvas');
+    canvas.width = w * scale; canvas.height = h * scale;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((pngBlob) => { handleSave(`${slug()}.png`, pngBlob); }, 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); showError('PNG 변환에 실패했습니다.'); };
+    img.src = url;
+  });
+
+  /* ---------------------------------------------------------------------
+   * init
+   * ------------------------------------------------------------------- */
+  syncHeightFromWidth();
+  loadCsvText(SAMPLE_CSV, '샘플 데이터 (reaction rate)');
+})();
+</script>
